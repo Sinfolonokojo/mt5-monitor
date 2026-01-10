@@ -45,6 +45,9 @@ main-backend/data/phases.json
 # VPS Agent configuration
 vps-agent/agents.json
 
+# VPS Credentials (NEVER COMMIT)
+VPS_CREDENTIALS.md
+
 # Build outputs
 frontend/dist/
 frontend/dist-ssr/
