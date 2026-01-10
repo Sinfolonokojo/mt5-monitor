@@ -42,6 +42,9 @@ logs/
 # Data files
 main-backend/data/phases.json
 
+# VPS Agent configuration
+vps-agent/agents.json
+
 # Build outputs
 frontend/dist/
 frontend/dist-ssr/

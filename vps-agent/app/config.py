@@ -1,7 +1,5 @@
 from pydantic_settings import BaseSettings
-from typing import List, Dict
-import json
-import os
+from typing import List
 
 
 class Settings(BaseSettings):
@@ -9,22 +7,15 @@ class Settings(BaseSettings):
     AGENT_NAME: str = "VPS-Agent-1"
     AGENT_PORT: int = 8000
 
-    # MT5 Accounts configuration (JSON string from env)
-    MT5_ACCOUNTS_JSON: str = "[]"
+    # MT5 Terminal configuration (NEW - for multi-terminal architecture)
+    MT5_TERMINAL_PATH: str = ""
+    ACCOUNT_DISPLAY_NAME: str = "Account"
 
     # CORS settings
     ALLOWED_ORIGINS: List[str] = ["*"]
 
     # Logging
     LOG_LEVEL: str = "INFO"
-
-    @property
-    def MT5_ACCOUNTS(self) -> List[Dict]:
-        """Parse MT5 accounts from JSON string"""
-        try:
-            return json.loads(self.MT5_ACCOUNTS_JSON)
-        except json.JSONDecodeError:
-            return []
 
     class Config:
         env_file = ".env"

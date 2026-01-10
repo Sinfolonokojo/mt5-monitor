@@ -3,15 +3,20 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import logging
 from .config import settings
-from .mt5_service import mt5_service
+from .mt5_service import MT5Service
 from .models import AccountResponse, AgentHealthResponse
 from .utils import setup_logging
-from typing import List
 from datetime import datetime
 
 # Configure logging
 setup_logging(settings.LOG_LEVEL)
 logger = logging.getLogger(__name__)
+
+# Initialize MT5 service with terminal path from config
+mt5_service = MT5Service(
+    terminal_path=settings.MT5_TERMINAL_PATH,
+    display_name=settings.ACCOUNT_DISPLAY_NAME
+)
 
 
 @asynccontextmanager
@@ -64,17 +69,17 @@ async def health_check():
     )
 
 
-@app.get("/accounts", response_model=List[AccountResponse])
+@app.get("/accounts", response_model=AccountResponse)
 async def get_accounts():
-    """Get all MT5 accounts info from this VPS"""
+    """Get MT5 account info from this agent's terminal"""
     try:
-        logger.info("Fetching accounts data")
-        accounts = mt5_service.get_all_accounts()
-        logger.info(f"Successfully fetched {len(accounts)} accounts")
-        return accounts
+        logger.info(f"Fetching account data for {settings.ACCOUNT_DISPLAY_NAME}")
+        account = mt5_service.get_account_data()
+        logger.info(f"Successfully fetched account {account.account_number}")
+        return account
     except Exception as e:
-        logger.error(f"Error fetching accounts: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to fetch accounts: {str(e)}")
+        logger.error(f"Error fetching account: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch account: {str(e)}")
 
 
 @app.post("/refresh")

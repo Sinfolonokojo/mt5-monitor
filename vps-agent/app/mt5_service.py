@@ -1,49 +1,50 @@
 import MetaTrader5 as mt5
-from typing import List, Optional
+from typing import Optional
 from datetime import datetime
 import logging
 from .models import AccountInfo, AccountResponse
-from .config import settings
 
 logger = logging.getLogger(__name__)
 
 
 class MT5Service:
-    """Service for interacting with MT5 terminals"""
+    """Service for interacting with a specific MT5 terminal (already logged in)"""
 
-    def __init__(self):
+    def __init__(self, terminal_path: str, display_name: str):
+        """
+        Initialize service for a specific terminal
+
+        Args:
+            terminal_path: Full path to MT5 terminal executable
+            display_name: Human-readable name for this account
+        """
+        self.terminal_path = terminal_path
+        self.display_name = display_name
         self.initialized = False
-        self.account_configs = settings.MT5_ACCOUNTS
 
     def initialize(self) -> bool:
-        """Initialize MT5 connection"""
-        if not mt5.initialize():
+        """Initialize MT5 connection to specific terminal"""
+        if not mt5.initialize(path=self.terminal_path):
             error = mt5.last_error()
-            logger.error(f"MT5 initialization failed: {error}")
+            logger.error(f"MT5 initialization failed for {self.terminal_path}: {error}")
             return False
         self.initialized = True
-        logger.info("MT5 initialized successfully")
+        logger.info(f"MT5 initialized successfully for {self.display_name} at {self.terminal_path}")
         return True
 
     def shutdown(self):
         """Shutdown MT5 connection"""
         mt5.shutdown()
         self.initialized = False
-        logger.info("MT5 shutdown")
+        logger.info(f"MT5 shutdown for {self.display_name}")
 
-    def get_account_info(self, account_number: int, password: str, server: str) -> Optional[AccountInfo]:
-        """Connect to specific account and retrieve info"""
+    def get_account_info(self) -> Optional[AccountInfo]:
+        """Get info from the already-logged-in account in this terminal"""
         try:
-            # Login to account
-            if not mt5.login(account_number, password=password, server=server):
-                error = mt5.last_error()
-                logger.error(f"Failed to login to account {account_number}: {error}")
-                return None
-
-            # Get account info
+            # Just read from already-logged-in account - NO LOGIN CALL
             account_info = mt5.account_info()
             if account_info is None:
-                logger.error(f"Failed to get account info for {account_number}")
+                logger.error(f"Failed to get account info from logged-in terminal for {self.display_name}")
                 return None
 
             return AccountInfo(
@@ -63,10 +64,10 @@ class MT5Service:
                 connected=True
             )
         except Exception as e:
-            logger.error(f"Error getting account info for {account_number}: {str(e)}")
+            logger.error(f"Error getting account info for {self.display_name}: {str(e)}")
             return None
 
-    def calculate_days_operating(self, account_number: int) -> int:
+    def calculate_days_operating(self) -> int:
         """Calculate days since account started operating (from first trade)"""
         try:
             # Get first trade history from a reasonable past date
@@ -74,7 +75,7 @@ class MT5Service:
             deals = mt5.history_deals_get(from_date, datetime.now())
 
             if deals is None or len(deals) == 0:
-                logger.info(f"No deals found for account {account_number}")
+                logger.info(f"No deals found for {self.display_name}")
                 return 0
 
             # Get first deal timestamp
@@ -83,50 +84,34 @@ class MT5Service:
             days = (datetime.now() - first_date).days
             return max(0, days)
         except Exception as e:
-            logger.error(f"Error calculating days operating for account {account_number}: {str(e)}")
+            logger.error(f"Error calculating days operating for {self.display_name}: {str(e)}")
             return 0
 
-    def get_all_accounts(self) -> List[AccountResponse]:
-        """Get info for all configured accounts on this VPS"""
+    def get_account_data(self) -> AccountResponse:
+        """Get data for the single account in this terminal"""
         if not self.initialized:
             self.initialize()
 
-        accounts = []
-        for config in self.account_configs:
-            account_number = config["account_number"]
-            logger.info(f"Fetching data for account {account_number}")
+        account_info = self.get_account_info()
+        if account_info:
+            days_op = self.calculate_days_operating()
 
-            account_info = self.get_account_info(
-                account_number,
-                config["password"],
-                config["server"]
+            return AccountResponse(
+                account_number=account_info.account_number,
+                account_name=self.display_name,
+                balance=account_info.balance,
+                status="connected",
+                days_operating=days_op,
+                last_updated=datetime.now()
             )
-
-            if account_info:
-                days_op = self.calculate_days_operating(account_number)
-
-                accounts.append(AccountResponse(
-                    account_number=account_info.account_number,
-                    account_name=config.get("display_name", account_info.account_name),
-                    balance=account_info.balance,
-                    status="connected" if account_info.connected else "disconnected",
-                    days_operating=days_op,
-                    last_updated=datetime.now()
-                ))
-            else:
-                # Account failed to connect - return default values
-                logger.warning(f"Account {account_number} failed to connect, returning disconnected status")
-                accounts.append(AccountResponse(
-                    account_number=account_number,
-                    account_name=config.get("display_name", f"Account {account_number}"),
-                    balance=0.0,
-                    status="disconnected",
-                    days_operating=0,
-                    last_updated=datetime.now()
-                ))
-
-        return accounts
-
-
-# Singleton instance
-mt5_service = MT5Service()
+        else:
+            # Account failed to connect - return default values
+            logger.warning(f"{self.display_name} failed to connect, returning disconnected status")
+            return AccountResponse(
+                account_number=0,
+                account_name=self.display_name,
+                balance=0.0,
+                status="disconnected",
+                days_operating=0,
+                last_updated=datetime.now()
+            )
