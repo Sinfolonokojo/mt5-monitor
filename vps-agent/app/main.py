@@ -63,7 +63,7 @@ async def health_check():
     """Health check endpoint"""
     return AgentHealthResponse(
         status="healthy" if mt5_service.initialized else "unhealthy",
-        accounts_monitored=len(settings.MT5_ACCOUNTS),
+        accounts_monitored=1,  # Single account per agent in multi-terminal architecture
         mt5_initialized=mt5_service.initialized,
         timestamp=datetime.now()
     )

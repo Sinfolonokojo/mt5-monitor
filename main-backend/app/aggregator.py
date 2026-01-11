@@ -25,8 +25,13 @@ class DataAggregator:
                 logger.info(f"Fetching from {agent_name} at {agent_url}")
                 response = await client.get(f"{agent_url}/accounts")
                 response.raise_for_status()
-                accounts = response.json()
-                logger.info(f"Successfully fetched {len(accounts)} accounts from {agent_name}")
+                account_data = response.json()
+
+                # In multi-terminal architecture, each agent returns a single account object
+                # Wrap it in a list for consistency with the aggregator
+                accounts = [account_data] if isinstance(account_data, dict) else account_data
+
+                logger.info(f"Successfully fetched {len(accounts)} account(s) from {agent_name}")
                 return agent_name, accounts, "online"
         except httpx.TimeoutException:
             logger.error(f"Timeout connecting to {agent_name} at {agent_url}")
