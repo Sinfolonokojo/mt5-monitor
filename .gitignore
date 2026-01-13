@@ -44,6 +44,7 @@ main-backend/data/phases.json
 
 # VPS Agent configuration
 vps-agent/agents.json
+vps-agent/agents-vps*.json
 
 # VPS Credentials (NEVER COMMIT)
 VPS_CREDENTIALS.md
@@ -56,3 +57,10 @@ frontend/dist-ssr/
 .pytest_cache/
 coverage/
 *.cover
+
+# Temporary files
+tmpclaude-*
+nul
+
+# Claude Code
+.claude/
