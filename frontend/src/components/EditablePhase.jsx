@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import PhaseIndicator from './PhaseIndicator';
 
-const COMMON_PHASES = ['F1', 'VS', 'WIN', '1', '2', '3', '4', '5'];
+const COMMON_PHASES = ['F1', 'F2', 'R'];
 
 const EditablePhase = ({ account, editMode, onUpdate }) => {
   const [isEditing, setIsEditing] = useState(false);

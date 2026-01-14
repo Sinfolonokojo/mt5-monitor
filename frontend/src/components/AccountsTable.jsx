@@ -1,4 +1,4 @@
-import { formatCurrency, formatDate } from '../utils/formatters';
+import { formatCurrency, formatDate, calculateVSGroups } from '../utils/formatters';
 import TableRow from './TableRow';
 import LoadingSpinner from './LoadingSpinner';
 import ErrorMessage from './ErrorMessage';
@@ -20,6 +20,14 @@ const AccountsTable = ({ data, loading, error, onRefresh, editMode, onPhaseUpdat
     );
   }
 
+  // Calculate VS groups
+  const vsGroups = calculateVSGroups(data.accounts);
+
+  // Calculate accounts by phase
+  const fase1Count = data.accounts.filter(account => account.phase === 'F1').length;
+  const fase2Count = data.accounts.filter(account => account.phase === 'F2').length;
+  const realCount = data.accounts.filter(account => account.phase === 'R').length;
+
   return (
     <div>
       {/* Summary Cards */}
@@ -37,19 +45,19 @@ const AccountsTable = ({ data, loading, error, onRefresh, editMode, onPhaseUpdat
           color="#3b82f6"
         />
         <SummaryCard
-          label="Connected"
-          value={data.connected_accounts}
+          label="Total Fase 1"
+          value={fase1Count}
+          color="#3b82f6"
+        />
+        <SummaryCard
+          label="Total Fase 2"
+          value={fase2Count}
+          color="#8b5cf6"
+        />
+        <SummaryCard
+          label="Total Real"
+          value={realCount}
           color="#22c55e"
-        />
-        <SummaryCard
-          label="Disconnected"
-          value={data.disconnected_accounts}
-          color="#ef4444"
-        />
-        <SummaryCard
-          label="Total Balance"
-          value={formatCurrency(data.total_balance)}
-          color={data.total_balance >= 0 ? '#22c55e' : '#ef4444'}
         />
       </div>
 
@@ -75,6 +83,11 @@ const AccountsTable = ({ data, loading, error, onRefresh, editMode, onPhaseUpdat
               <th
                 style={{ padding: '12px 16px', textAlign: 'center', fontWeight: '600' }}
               >
+                Status
+              </th>
+              <th
+                style={{ padding: '12px 16px', textAlign: 'center', fontWeight: '600' }}
+              >
                 #
               </th>
               <th
@@ -85,22 +98,37 @@ const AccountsTable = ({ data, loading, error, onRefresh, editMode, onPhaseUpdat
               <th
                 style={{ padding: '12px 16px', textAlign: 'left', fontWeight: '600' }}
               >
-                CUENTAS
-              </th>
-              <th
-                style={{ padding: '12px 16px', textAlign: 'left', fontWeight: '600' }}
-              >
-                Estado
-              </th>
-              <th
-                style={{ padding: '12px 16px', textAlign: 'right', fontWeight: '600' }}
-              >
-                Balance
+                Holder
               </th>
               <th
                 style={{ padding: '12px 16px', textAlign: 'center', fontWeight: '600' }}
               >
-                F1/VS
+                Firm
+              </th>
+              <th
+                style={{ padding: '12px 16px', textAlign: 'left', fontWeight: '600' }}
+              >
+                CUENTAS
+              </th>
+              <th
+                style={{ padding: '12px 16px', textAlign: 'right', fontWeight: '600' }}
+              >
+                P/L
+              </th>
+              <th
+                style={{ padding: '12px 16px', textAlign: 'right', fontWeight: '600' }}
+              >
+                Max Loss
+              </th>
+              <th
+                style={{ padding: '12px 16px', textAlign: 'center', fontWeight: '600' }}
+              >
+                Fase
+              </th>
+              <th
+                style={{ padding: '12px 16px', textAlign: 'center', fontWeight: '600' }}
+              >
+                VS
               </th>
             </tr>
           </thead>
@@ -111,6 +139,7 @@ const AccountsTable = ({ data, loading, error, onRefresh, editMode, onPhaseUpdat
                 account={account}
                 editMode={editMode}
                 onPhaseUpdate={onPhaseUpdate}
+                vsGroup={vsGroups[account.account_number]}
               />
             ))}
           </tbody>
