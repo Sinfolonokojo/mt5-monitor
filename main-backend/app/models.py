@@ -12,8 +12,12 @@ class AccountData(BaseModel):
     status: str
     phase: str
     days_operating: int
+    has_open_position: bool
     vps_source: str
     last_updated: datetime
+    account_holder: Optional[str] = "Unknown"
+    prop_firm: Optional[str] = "N/A"
+    initial_balance: Optional[float] = 100000.0
 
 
 class AggregatedResponse(BaseModel):

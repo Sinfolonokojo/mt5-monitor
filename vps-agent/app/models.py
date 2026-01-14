@@ -28,7 +28,11 @@ class AccountResponse(BaseModel):
     balance: float
     status: str  # "connected" or "disconnected"
     days_operating: int
+    has_open_position: bool
     last_updated: datetime
+    account_holder: Optional[str] = "Unknown"
+    prop_firm: Optional[str] = "N/A"
+    initial_balance: Optional[float] = 100000.0
 
 
 class AgentHealthResponse(BaseModel):

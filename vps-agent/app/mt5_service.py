@@ -1,6 +1,6 @@
 import MetaTrader5 as mt5
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, timedelta
 import logging
 from .models import AccountInfo, AccountResponse
 
@@ -10,16 +10,23 @@ logger = logging.getLogger(__name__)
 class MT5Service:
     """Service for interacting with a specific MT5 terminal (already logged in)"""
 
-    def __init__(self, terminal_path: str, display_name: str):
+    def __init__(self, terminal_path: str, display_name: str, account_holder: str = "Unknown",
+                 prop_firm: str = "N/A", initial_balance: float = 100000.0):
         """
         Initialize service for a specific terminal
 
         Args:
             terminal_path: Full path to MT5 terminal executable
             display_name: Human-readable name for this account
+            account_holder: Name of the account holder
+            prop_firm: Prop firm abbreviation (e.g., 'FN', 'T5', 'FT')
+            initial_balance: Initial account balance
         """
         self.terminal_path = terminal_path
         self.display_name = display_name
+        self.account_holder = account_holder
+        self.prop_firm = prop_firm
+        self.initial_balance = initial_balance
         self.initialized = False
 
     def initialize(self) -> bool:
@@ -67,10 +74,21 @@ class MT5Service:
             logger.error(f"Error getting account info for {self.display_name}: {str(e)}")
             return None
 
-    def calculate_days_operating(self) -> int:
-        """Calculate days since account started operating (from first trade)"""
+    def has_open_positions(self) -> bool:
+        """Check if the account has any open positions"""
         try:
-            # Get first trade history from a reasonable past date
+            positions = mt5.positions_get()
+            if positions is None:
+                return False
+            return len(positions) > 0
+        except Exception as e:
+            logger.error(f"Error checking open positions for {self.display_name}: {str(e)}")
+            return False
+
+    def calculate_days_operating(self) -> int:
+        """Calculate number of unique days where at least one position was open"""
+        try:
+            # Get trade history from a reasonable past date
             from_date = datetime(2020, 1, 1)
             deals = mt5.history_deals_get(from_date, datetime.now())
 
@@ -78,11 +96,46 @@ class MT5Service:
                 logger.info(f"No deals found for {self.display_name}")
                 return 0
 
-            # Get first deal timestamp
-            first_deal = min(deals, key=lambda x: x.time)
-            first_date = datetime.fromtimestamp(first_deal.time)
-            days = (datetime.now() - first_date).days
-            return max(0, days)
+            # Filter to only include actual trades (BUY=0, SELL=1)
+            # Exclude balance operations (BALANCE=2), credits, bonuses, etc.
+            trade_deals = [deal for deal in deals if deal.type in (0, 1)]
+
+            if not trade_deals:
+                logger.info(f"No trade deals found for {self.display_name}")
+                return 0
+
+            # Group deals by position_id to track position lifetimes
+            positions = {}
+            for deal in trade_deals:
+                pos_id = deal.position_id
+                if pos_id not in positions:
+                    positions[pos_id] = {'entry': None, 'exit': None}
+
+                # Entry deal (opens position)
+                if deal.entry == 0:  # DEAL_ENTRY_IN
+                    positions[pos_id]['entry'] = deal.time
+                # Exit deal (closes position)
+                elif deal.entry == 1:  # DEAL_ENTRY_OUT
+                    positions[pos_id]['exit'] = deal.time
+
+            # Collect all days when at least one position was open
+            days_with_open_positions = set()
+
+            for pos_id, pos_data in positions.items():
+                if pos_data['entry']:
+                    entry_time = datetime.fromtimestamp(pos_data['entry'])
+                    # If no exit, position is still open (use current time)
+                    exit_time = datetime.fromtimestamp(pos_data['exit']) if pos_data['exit'] else datetime.now()
+
+                    # Add all dates between entry and exit (inclusive)
+                    current_date = entry_time.date()
+                    end_date = exit_time.date()
+
+                    while current_date <= end_date:
+                        days_with_open_positions.add(current_date)
+                        current_date += timedelta(days=1)
+
+            return len(days_with_open_positions)
         except Exception as e:
             logger.error(f"Error calculating days operating for {self.display_name}: {str(e)}")
             return 0
@@ -95,6 +148,7 @@ class MT5Service:
         account_info = self.get_account_info()
         if account_info:
             days_op = self.calculate_days_operating()
+            has_open_pos = self.has_open_positions()
 
             return AccountResponse(
                 account_number=account_info.account_number,
@@ -102,7 +156,11 @@ class MT5Service:
                 balance=account_info.balance,
                 status="connected",
                 days_operating=days_op,
-                last_updated=datetime.now()
+                has_open_position=has_open_pos,
+                last_updated=datetime.now(),
+                account_holder=self.account_holder,
+                prop_firm=self.prop_firm,
+                initial_balance=self.initial_balance
             )
         else:
             # Account failed to connect - return default values
@@ -113,5 +171,9 @@ class MT5Service:
                 balance=0.0,
                 status="disconnected",
                 days_operating=0,
-                last_updated=datetime.now()
+                has_open_position=False,
+                last_updated=datetime.now(),
+                account_holder=self.account_holder,
+                prop_firm=self.prop_firm,
+                initial_balance=self.initial_balance
             )

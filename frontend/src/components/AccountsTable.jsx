@@ -128,6 +128,11 @@ const AccountsTable = ({ data, loading, error, onRefresh, editMode, onPhaseUpdat
               <th
                 style={{ padding: '12px 16px', textAlign: 'center', fontWeight: '600' }}
               >
+                Open Trade
+              </th>
+              <th
+                style={{ padding: '12px 16px', textAlign: 'center', fontWeight: '600' }}
+              >
                 VS
               </th>
             </tr>

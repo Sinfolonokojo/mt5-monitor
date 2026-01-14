@@ -69,8 +69,12 @@ async def get_all_accounts(force_refresh: bool = False):
                 status=raw_account["status"],
                 phase=phase_manager.get_phase(raw_account["account_number"]),
                 days_operating=raw_account["days_operating"],
+                has_open_position=raw_account.get("has_open_position", False),
                 vps_source=raw_account["vps_source"],
-                last_updated=datetime.fromisoformat(raw_account["last_updated"].replace("Z", "+00:00")) if isinstance(raw_account["last_updated"], str) else raw_account["last_updated"]
+                last_updated=datetime.fromisoformat(raw_account["last_updated"].replace("Z", "+00:00")) if isinstance(raw_account["last_updated"], str) else raw_account["last_updated"],
+                account_holder=raw_account.get("account_holder", "Unknown"),
+                prop_firm=raw_account.get("prop_firm", "N/A"),
+                initial_balance=raw_account.get("initial_balance", 100000.0)
             )
             accounts.append(account)
             row_number += 1
