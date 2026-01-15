@@ -40,6 +40,9 @@ def start_agent(config):
     env["AGENT_PORT"] = str(config["port"])
     env["MT5_TERMINAL_PATH"] = config["terminal_path"]
     env["ACCOUNT_DISPLAY_NAME"] = config["display_name"]
+    env["ACCOUNT_HOLDER"] = config.get("account_holder", "Unknown")
+    env["PROP_FIRM"] = config.get("prop_firm", "N/A")
+    env["INITIAL_BALANCE"] = str(config.get("initial_balance", 100000.0))
 
     cmd = [
         "python", "-m", "uvicorn",

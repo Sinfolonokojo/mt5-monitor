@@ -15,7 +15,10 @@ logger = logging.getLogger(__name__)
 # Initialize MT5 service with terminal path from config
 mt5_service = MT5Service(
     terminal_path=settings.MT5_TERMINAL_PATH,
-    display_name=settings.ACCOUNT_DISPLAY_NAME
+    display_name=settings.ACCOUNT_DISPLAY_NAME,
+    account_holder=settings.ACCOUNT_HOLDER,
+    prop_firm=settings.PROP_FIRM,
+    initial_balance=settings.INITIAL_BALANCE
 )
 
 

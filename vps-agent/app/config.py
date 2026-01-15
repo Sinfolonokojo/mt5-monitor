@@ -11,6 +11,11 @@ class Settings(BaseSettings):
     MT5_TERMINAL_PATH: str = ""
     ACCOUNT_DISPLAY_NAME: str = "Account"
 
+    # Account metadata
+    ACCOUNT_HOLDER: str = "Unknown"
+    PROP_FIRM: str = "N/A"
+    INITIAL_BALANCE: float = 100000.0
+
     # CORS settings
     ALLOWED_ORIGINS: List[str] = ["*"]
 
