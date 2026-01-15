@@ -80,41 +80,54 @@ export const calculateVSGroups = (accounts) => {
     account.profitPercentage <= 8 && account.profitPercentage > -10
   );
 
-  // Sort by P/L (ascending)
-  eligibleAccounts.sort((a, b) => a.profitLoss - b.profitLoss);
+  // Separate into profitable and unprofitable accounts
+  const profitableAccounts = eligibleAccounts.filter(account => account.profitLoss > 0);
+  const unprofitableAccounts = eligibleAccounts.filter(account => account.profitLoss <= 0);
+
+  // Sort each group by P/L (ascending)
+  profitableAccounts.sort((a, b) => a.profitLoss - b.profitLoss);
+  unprofitableAccounts.sort((a, b) => a.profitLoss - b.profitLoss);
 
   // Create VS groups map
   const vsGroups = {};
   const assigned = new Set();
   let groupId = 1;
 
-  // Pair accounts with similar P/L values
-  for (let i = 0; i < eligibleAccounts.length; i++) {
-    if (assigned.has(eligibleAccounts[i].account_number)) continue;
+  // Helper function to pair accounts within a group
+  const pairAccounts = (accountList) => {
+    for (let i = 0; i < accountList.length; i++) {
+      if (assigned.has(accountList[i].account_number)) continue;
 
-    // Find the closest unassigned account
-    let closestIndex = -1;
-    let closestDiff = Infinity;
+      // Find the closest unassigned account
+      let closestIndex = -1;
+      let closestDiff = Infinity;
 
-    for (let j = i + 1; j < eligibleAccounts.length; j++) {
-      if (assigned.has(eligibleAccounts[j].account_number)) continue;
+      for (let j = i + 1; j < accountList.length; j++) {
+        if (assigned.has(accountList[j].account_number)) continue;
 
-      const diff = Math.abs(eligibleAccounts[j].profitLoss - eligibleAccounts[i].profitLoss);
-      if (diff < closestDiff) {
-        closestDiff = diff;
-        closestIndex = j;
+        const diff = Math.abs(accountList[j].profitLoss - accountList[i].profitLoss);
+        if (diff < closestDiff) {
+          closestDiff = diff;
+          closestIndex = j;
+        }
+      }
+
+      // If we found a pair, assign the same group ID
+      if (closestIndex !== -1) {
+        vsGroups[accountList[i].account_number] = groupId;
+        vsGroups[accountList[closestIndex].account_number] = groupId;
+        assigned.add(accountList[i].account_number);
+        assigned.add(accountList[closestIndex].account_number);
+        groupId++;
       }
     }
+  };
 
-    // If we found a pair, assign the same group ID
-    if (closestIndex !== -1) {
-      vsGroups[eligibleAccounts[i].account_number] = groupId;
-      vsGroups[eligibleAccounts[closestIndex].account_number] = groupId;
-      assigned.add(eligibleAccounts[i].account_number);
-      assigned.add(eligibleAccounts[closestIndex].account_number);
-      groupId++;
-    }
-  }
+  // Pair profitable accounts first
+  pairAccounts(profitableAccounts);
+
+  // Then pair unprofitable accounts
+  pairAccounts(unprofitableAccounts);
 
   return vsGroups;
 };
