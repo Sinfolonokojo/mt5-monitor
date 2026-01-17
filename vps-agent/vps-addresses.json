@@ -1,0 +1,31 @@
+{
+  "vps_mapping": {
+    "VPS1": "194.163.152.137",
+    "VPS2": "155.133.26.68",
+    "VPS3": "89.116.26.238",
+    "VPS4": "75.119.135.121",
+    "VPS5": "178.18.247.182",
+    "VPS6": "38.242.245.51",
+    "VPS7": "158.220.105.27",
+    "VPS8": "84.247.142.140",
+    "VPS9": "109.199.97.31",
+    "VPS10": "109.199.97.222"
+  },
+  "vps_names": {
+    "VPS1": "Yojan Forero",
+    "VPS2": "Leandro Forero",
+    "VPS3": "Juana Leon",
+    "VPS4": "Emir Silva",
+    "VPS5": "Juliana Ramirez",
+    "VPS6": "William Forero",
+    "VPS7": "Sonia Alvarado",
+    "VPS8": "Vanesa Celis",
+    "VPS9": "Miguel Alzate",
+    "VPS10": "Andres Leon"
+  },
+  "credentials": {
+    "username": "administrator",
+    "password": "20Coberturas25"
+  },
+  "notes": "VPS1 (Yojan Forero) is already deployed. VPS2-10 need deployment."
+}
