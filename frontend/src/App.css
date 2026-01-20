@@ -78,26 +78,48 @@
 /* Responsive design */
 @media (max-width: 768px) {
   .app-header {
-    flex-direction: column;
-    gap: 16px;
-    text-align: center;
+    padding: 16px;
+    gap: 12px;
   }
 
   .app-main {
-    padding: 16px;
+    padding: 12px;
   }
 
   .app-header h1 {
-    font-size: 20px;
+    font-size: 18px;
   }
 
   .header-controls {
-    flex-direction: column;
+    flex-direction: row;
     width: 100%;
+    gap: 8px;
   }
 
   .refresh-button,
   .edit-mode-button {
-    width: 100%;
+    flex: 1;
+    padding: 12px 16px;
+    font-size: 13px;
+  }
+
+  .app-footer {
+    font-size: 12px;
+    padding: 12px;
+  }
+}
+
+/* Touch-friendly adjustments */
+@media (hover: none) and (pointer: coarse) {
+  .refresh-button,
+  .edit-mode-button {
+    min-height: 44px; /* Apple's recommended touch target size */
+  }
+}
+
+/* Prevent text selection on touch devices */
+@media (max-width: 768px) {
+  * {
+    -webkit-tap-highlight-color: rgba(0, 0, 0, 0.1);
   }
 }

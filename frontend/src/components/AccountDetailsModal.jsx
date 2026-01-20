@@ -31,7 +31,7 @@ const AccountDetailsModal = ({ account, onClose, vsGroup }) => {
         justifyContent: 'center',
         alignItems: 'center',
         zIndex: 1000,
-        padding: '20px',
+        padding: '0',
       }}
       onClick={onClose}
     >
@@ -45,8 +45,18 @@ const AccountDetailsModal = ({ account, onClose, vsGroup }) => {
           overflow: 'auto',
           boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
         }}
+        className="modal-content"
         onClick={(e) => e.stopPropagation()}
       >
+        <style>{`
+          @media (max-width: 768px) {
+            .modal-content {
+              border-radius: 0 !important;
+              max-height: 100vh !important;
+              height: 100vh !important;
+            }
+          }
+        `}</style>
         {/* Header */}
         <div
           style={{

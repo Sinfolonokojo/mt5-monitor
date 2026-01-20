@@ -1,6 +1,7 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { formatCurrency, formatDate, calculateVSGroups, exportToExcel } from '../utils/formatters';
 import TableRow from './TableRow';
+import MobileAccountCard from './MobileAccountCard';
 import LoadingSpinner from './LoadingSpinner';
 import ErrorMessage from './ErrorMessage';
 import AccountDetailsModal from './AccountDetailsModal';
@@ -9,6 +10,19 @@ const AccountsTable = ({ data, loading, error, onRefresh, editMode, onPhaseUpdat
   const [sortMode, setSortMode] = useState('VS'); // 'VS', 'PL_DESC', 'PL_ASC'
   const [selectedAccount, setSelectedAccount] = useState(null);
   const [openTradeFilter, setOpenTradeFilter] = useState('all'); // 'all', 'with_open', 'without_open'
+  const [isMobile, setIsMobile] = useState(false);
+
+  // Detect screen size for responsive layout
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
   // Calculate automatic VS groups (with null safety)
   const autoVSGroups = useMemo(() => {
@@ -208,119 +222,177 @@ const AccountsTable = ({ data, loading, error, onRefresh, editMode, onPhaseUpdat
         </button>
       </div>
 
-      {/* Main Table */}
-      <div
-        style={{
-          overflowX: 'auto',
-          borderRadius: '8px',
-          boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
-        }}
-      >
-        <table
+      {/* Mobile Cards View */}
+      {isMobile ? (
+        <div style={{ padding: '0 4px' }}>
+          {/* Mobile Filter/Sort Controls */}
+          <div style={{ marginBottom: '16px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            <select
+              value={sortMode}
+              onChange={(e) => setSortMode(e.target.value)}
+              style={{
+                flex: 1,
+                minWidth: '140px',
+                padding: '10px 12px',
+                borderRadius: '8px',
+                border: '1px solid #d1d5db',
+                fontSize: '14px',
+                fontWeight: '500',
+                backgroundColor: 'white',
+              }}
+            >
+              <option value="VS">Ordenar: VS Grupos</option>
+              <option value="PL_DESC">Ordenar: Mayor P/L</option>
+              <option value="PL_ASC">Ordenar: Menor P/L</option>
+            </select>
+            <select
+              value={openTradeFilter}
+              onChange={(e) => setOpenTradeFilter(e.target.value)}
+              style={{
+                flex: 1,
+                minWidth: '140px',
+                padding: '10px 12px',
+                borderRadius: '8px',
+                border: '1px solid #d1d5db',
+                fontSize: '14px',
+                fontWeight: '500',
+                backgroundColor: 'white',
+              }}
+            >
+              <option value="all">Todas las cuentas</option>
+              <option value="with_open">Con posición abierta</option>
+              <option value="without_open">Sin posición abierta</option>
+            </select>
+          </div>
+
+          {/* Cards List */}
+          {sortedAccounts.map((account) => (
+            <MobileAccountCard
+              key={account.account_number}
+              account={account}
+              editMode={editMode}
+              onPhaseUpdate={onPhaseUpdate}
+              onVSUpdate={onVSUpdate}
+              vsGroup={mergedVSGroups[account.account_number]}
+              onCardClick={(account) => setSelectedAccount(account)}
+            />
+          ))}
+        </div>
+      ) : (
+        /* Desktop Table View */
+        <div
           style={{
-            width: '100%',
-            backgroundColor: 'white',
-            borderCollapse: 'collapse',
+            overflowX: 'auto',
+            borderRadius: '8px',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
           }}
         >
-          <thead
-            style={{ backgroundColor: '#f9fafb', borderBottom: '2px solid #e5e7eb' }}
+          <table
+            style={{
+              width: '100%',
+              backgroundColor: 'white',
+              borderCollapse: 'collapse',
+            }}
           >
-            <tr>
-              <th
-                style={{ padding: '12px 16px', textAlign: 'center', fontWeight: '600' }}
-              >
-                Status
-              </th>
-              <th
-                style={{ padding: '12px 16px', textAlign: 'center', fontWeight: '600' }}
-              >
-                Días op
-              </th>
-              <th
-                style={{ padding: '12px 16px', textAlign: 'left', fontWeight: '600' }}
-              >
-                Holder
-              </th>
-              <th
-                style={{ padding: '12px 16px', textAlign: 'center', fontWeight: '600' }}
-              >
-                Firm
-              </th>
-              <th
-                style={{ padding: '12px 16px', textAlign: 'left', fontWeight: '600' }}
-              >
-                CUENTAS
-              </th>
-              <th
-                onClick={handlePLHeaderClick}
-                style={{
-                  padding: '12px 16px',
-                  textAlign: 'right',
-                  fontWeight: '600',
-                  cursor: 'pointer',
-                  userSelect: 'none',
-                  backgroundColor: sortMode.startsWith('PL_') ? '#e5e7eb' : 'transparent',
-                  transition: 'background-color 0.2s'
-                }}
-              >
-                P/L {sortMode === 'PL_DESC' ? '↓' : sortMode === 'PL_ASC' ? '↑' : ''}
-              </th>
-              <th
-                style={{ padding: '12px 16px', textAlign: 'right', fontWeight: '600' }}
-              >
-                Pérdida Máx
-              </th>
-              <th
-                style={{ padding: '12px 16px', textAlign: 'center', fontWeight: '600' }}
-              >
-                Fase
-              </th>
-              <th
-                onClick={handleOpenTradeHeaderClick}
-                style={{
-                  padding: '12px 16px',
-                  textAlign: 'center',
-                  fontWeight: '600',
-                  cursor: 'pointer',
-                  userSelect: 'none',
-                  backgroundColor: openTradeFilter !== 'all' ? '#e5e7eb' : 'transparent',
-                  transition: 'background-color 0.2s'
-                }}
-              >
-                Open Trade {openTradeFilter === 'with_open' ? '✓' : openTradeFilter === 'without_open' ? '✗' : ''}
-              </th>
-              <th
-                onClick={handleVSHeaderClick}
-                style={{
-                  padding: '12px 16px',
-                  textAlign: 'center',
-                  fontWeight: '600',
-                  cursor: 'pointer',
-                  userSelect: 'none',
-                  backgroundColor: sortMode === 'VS' ? '#e5e7eb' : 'transparent',
-                  transition: 'background-color 0.2s'
-                }}
-              >
-                VS {sortMode === 'VS' ? '✓' : ''}
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {sortedAccounts.map((account) => (
-              <TableRow
-                key={account.account_number}
-                account={account}
-                editMode={editMode}
-                onPhaseUpdate={onPhaseUpdate}
-                onVSUpdate={onVSUpdate}
-                vsGroup={mergedVSGroups[account.account_number]}
-                onRowClick={(account) => setSelectedAccount(account)}
-              />
-            ))}
-          </tbody>
-        </table>
-      </div>
+            <thead
+              style={{ backgroundColor: '#f9fafb', borderBottom: '2px solid #e5e7eb' }}
+            >
+              <tr>
+                <th
+                  style={{ padding: '12px 16px', textAlign: 'center', fontWeight: '600' }}
+                >
+                  Status
+                </th>
+                <th
+                  style={{ padding: '12px 16px', textAlign: 'center', fontWeight: '600' }}
+                >
+                  Días op
+                </th>
+                <th
+                  style={{ padding: '12px 16px', textAlign: 'left', fontWeight: '600' }}
+                >
+                  Holder
+                </th>
+                <th
+                  style={{ padding: '12px 16px', textAlign: 'center', fontWeight: '600' }}
+                >
+                  Firm
+                </th>
+                <th
+                  style={{ padding: '12px 16px', textAlign: 'left', fontWeight: '600' }}
+                >
+                  CUENTAS
+                </th>
+                <th
+                  onClick={handlePLHeaderClick}
+                  style={{
+                    padding: '12px 16px',
+                    textAlign: 'right',
+                    fontWeight: '600',
+                    cursor: 'pointer',
+                    userSelect: 'none',
+                    backgroundColor: sortMode.startsWith('PL_') ? '#e5e7eb' : 'transparent',
+                    transition: 'background-color 0.2s'
+                  }}
+                >
+                  P/L {sortMode === 'PL_DESC' ? '↓' : sortMode === 'PL_ASC' ? '↑' : ''}
+                </th>
+                <th
+                  style={{ padding: '12px 16px', textAlign: 'right', fontWeight: '600' }}
+                >
+                  Pérdida Máx
+                </th>
+                <th
+                  style={{ padding: '12px 16px', textAlign: 'center', fontWeight: '600' }}
+                >
+                  Fase
+                </th>
+                <th
+                  onClick={handleOpenTradeHeaderClick}
+                  style={{
+                    padding: '12px 16px',
+                    textAlign: 'center',
+                    fontWeight: '600',
+                    cursor: 'pointer',
+                    userSelect: 'none',
+                    backgroundColor: openTradeFilter !== 'all' ? '#e5e7eb' : 'transparent',
+                    transition: 'background-color 0.2s'
+                  }}
+                >
+                  Open Trade {openTradeFilter === 'with_open' ? '✓' : openTradeFilter === 'without_open' ? '✗' : ''}
+                </th>
+                <th
+                  onClick={handleVSHeaderClick}
+                  style={{
+                    padding: '12px 16px',
+                    textAlign: 'center',
+                    fontWeight: '600',
+                    cursor: 'pointer',
+                    userSelect: 'none',
+                    backgroundColor: sortMode === 'VS' ? '#e5e7eb' : 'transparent',
+                    transition: 'background-color 0.2s'
+                  }}
+                >
+                  VS {sortMode === 'VS' ? '✓' : ''}
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {sortedAccounts.map((account) => (
+                <TableRow
+                  key={account.account_number}
+                  account={account}
+                  editMode={editMode}
+                  onPhaseUpdate={onPhaseUpdate}
+                  onVSUpdate={onVSUpdate}
+                  vsGroup={mergedVSGroups[account.account_number]}
+                  onRowClick={(account) => setSelectedAccount(account)}
+                />
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {/* Last Updated */}
       <div
