@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import PhaseIndicator from './PhaseIndicator';
 
-const COMMON_PHASES = ['F1', 'F2', 'R'];
+const COMMON_PHASES = ['F1', 'F2', 'R', 'Q'];
 
 const EditablePhase = ({ account, editMode, onUpdate }) => {
   const [isEditing, setIsEditing] = useState(false);
@@ -15,8 +15,7 @@ const EditablePhase = ({ account, editMode, onUpdate }) => {
   }
 
   const handleSave = async () => {
-    const newPhase = selectedPhase === 'custom' ? customPhase : selectedPhase;
-    if (!newPhase.trim()) {
+    if (!selectedPhase.trim()) {
       setError('Phase value cannot be empty');
       return;
     }
@@ -25,7 +24,7 @@ const EditablePhase = ({ account, editMode, onUpdate }) => {
     setError(null);
 
     try {
-      await onUpdate(account.account_number, newPhase);
+      await onUpdate(account.account_number, selectedPhase);
       setIsEditing(false);
     } catch (err) {
       setError('Failed to update phase');
@@ -61,24 +60,7 @@ const EditablePhase = ({ account, editMode, onUpdate }) => {
               {phase}
             </option>
           ))}
-          <option value="custom">Custom...</option>
         </select>
-
-        {selectedPhase === 'custom' && (
-          <input
-            type="text"
-            value={customPhase}
-            onChange={(e) => setCustomPhase(e.target.value)}
-            placeholder="Enter custom phase"
-            style={{
-              padding: '6px 8px',
-              borderRadius: '4px',
-              border: '1px solid #d1d5db',
-              fontSize: '14px',
-            }}
-            disabled={loading}
-          />
-        )}
 
         {error && (
           <span style={{ color: '#ef4444', fontSize: '12px' }}>{error}</span>

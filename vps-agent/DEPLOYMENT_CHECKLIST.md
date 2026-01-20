@@ -1,127 +1,121 @@
-# VPS Auto-Reconnection Deployment Checklist
+# Lista de Verificación de Despliegue VPS
 
-## Quick Start
+## 📦 Preparación y Configuración
 
-### For VPS2-4 (Config Files Exist)
-```powershell
-# On dev machine
-.\deploy-to-vps.ps1 -VPSName VPS2 -VPSAddress <IP>
-```
+### Paso 0: Descargar y Copiar Archivos
 
-### For VPS5-10 (Need to Create Configs First)
-```powershell
-# On dev machine - Create config first
-.\create-vps-config.ps1 -VPSName VPS5 -FundedNextAccount 12345678 -FivePercentAccount 87654321
+1. **Descargar carpeta vps-agent desde Google Drive**
+   - Descarga la carpeta completa `vps-agent` a tu computadora
+   - Verifica que contenga todos los archivos necesarios
 
-# Then deploy
-.\deploy-to-vps.ps1 -VPSName VPS5 -VPSAddress <IP>
-```
+2. **Conectar al VPS y limpiar instalación anterior (si existe)**
+   - Conecta por RDP al VPS
+   - **IMPORTANTE:** Si existe una carpeta `vps-agent` vieja en `C:\Users\Administrator\Desktop\vps-agent`:
+     ```powershell
+     # Detener procesos primero
+     taskkill /F /IM python.exe
+
+     # Borrar carpeta vieja completa
+     cd C:\Users\Administrator\Desktop
+     Remove-Item -Recurse -Force vps-agent
+     ```
+
+3. **Copiar carpeta nueva al VPS**
+   - Copia toda la carpeta `vps-agent` descargada de Google Drive
+   - Destino: `C:\Users\Administrator\Desktop\vps-agent`
+
+4. **Crear archivo de configuración agents.json**
+
+   Abre PowerShell **en el VPS** y ejecuta:
+   ```powershell
+   cd C:\Users\Administrator\Desktop\vps-agent
+   .\create-vps-config.ps1
+   ```
+
+   El script te preguntará:
+   - **Nombre del VPS**: Ejemplo: `VPS5`, `VPS6`, `VPS7`, etc.
+   - **Cuenta FundedNext**: Número de cuenta o presiona Enter para omitir
+   - **Cuenta Five Percent**: Número de cuenta o presiona Enter para omitir
+   - **Cuenta FTMO**: Número de cuenta o presiona Enter para omitir
+
+   **Ejemplo de uso:**
+   ```
+   Nombre del VPS (ej: VPS5, VPS6, etc.): VPS5
+   ✅ Nombre del VPS: VPS5
+
+   Cuenta FundedNext: 123456
+   Cuenta Five Percent: 789012
+   Cuenta FTMO: 345678
+
+   ✅ Agregando agente FundedNext: 123456 (Puerto 8000)
+   ✅ Agregando agente Five Percent: 789012 (Puerto 8001)
+   ✅ Agregando agente FTMO: 345678 (Puerto 8002)
+   ```
+
+   - [ ] Carpeta vps-agent descargada de Google Drive
+   - [ ] Carpeta vieja borrada del VPS (si existía)
+   - [ ] Carpeta nueva copiada al VPS en `C:\Users\Administrator\Desktop\vps-agent`
+   - [ ] Script `create-vps-config.ps1` ejecutado exitosamente
+   - [ ] Archivo `agents.json` creado con las cuentas correctas
 
 ---
 
-## Pre-Deployment Checklist
+## 🚀 Despliegue e Inicio del Sistema
 
-### ✅ Phase 1: Dev Machine Cleanup - COMPLETED
-- [x] Deleted `launcher_service.py`
-- [x] Deleted `WINDOWS_SERVICE_SETUP.md`
-- [x] Verified all deployment files exist
-- [x] Created deployment helper scripts
+### Lista de Verificación por VPS
 
-### ⏳ Phase 2: Create Missing Configs (VPS5-10)
-For each VPS that needs a config:
-- [ ] Run `create-vps-config.ps1` with account numbers
-- [ ] Verify JSON is valid
-- [ ] Review generated config file
+**VPS: __________ | IP: __________ | Fecha: __________**
 
----
-
-## Deployment Order (Recommended)
-
-### 🧪 Stage 1: Test Deployment (Day 1)
-- [ ] **VPS2** - Deploy and monitor for 24 hours
-
-### 📦 Stage 2: Small Batch (Day 2)
-- [ ] **VPS3** - Deploy
-- [ ] **VPS4** - Deploy
-- [ ] Monitor both for 24 hours
-
-### 🚀 Stage 3: Remaining VPS (Day 3+)
-- [ ] **VPS5** - Deploy
-- [ ] **VPS6** - Deploy
-- [ ] **VPS7** - Deploy
-- [ ] **VPS8** - Deploy
-- [ ] **VPS9** - Deploy
-- [ ] **VPS10** - Deploy
-
----
-
-## Per-VPS Deployment Checklist
-
-### VPS: __________ | IP: __________ | Date: __________
-
-#### Before Deployment
-- [ ] RDP connection established
-- [ ] Current launcher is running (verify before stopping)
-- [ ] Noted current MT5 connection status
-
-#### Backup (Step 1)
+#### Instalar Dependencias (Paso 1)
 ```powershell
 cd C:\Users\Administrator\Desktop\vps-agent
-$timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
-mkdir "backup-$timestamp"
-Copy-Item .\app\*.py ".\backup-$timestamp\"
-Copy-Item .\launcher.py ".\backup-$timestamp\"
-Copy-Item .\agents.json ".\backup-$timestamp\"
+python -m pip install -r requirements.txt
 ```
-- [ ] Backup created successfully
-- [ ] Backup location noted: __________
+- [ ] Dependencias instaladas exitosamente
+- [ ] Sin mensajes de error
 
-#### Stop Services (Step 2)
+#### Verificar Configuración (Paso 2)
 ```powershell
-taskkill /F /IM python.exe
-```
-- [ ] Launcher stopped
-- [ ] All Python processes terminated
-
-#### Copy Files (Step 3)
-**Files to copy from dev machine:**
-- [ ] `app/main.py`
-- [ ] `app/mt5_service.py`
-- [ ] `app/models.py`
-- [ ] `app/config.py`
-- [ ] `app/utils.py`
-- [ ] `app/__init__.py`
-- [ ] `launcher.py`
-- [ ] `view_logs.py`
-- [ ] `requirements.txt`
-- [ ] `agents-vpsX.json` → rename to `agents.json`
-
-#### Install Dependencies (Step 4)
-```powershell
-cd C:\Users\Administrator\Desktop\vps-agent
-pip install -r requirements.txt
-```
-- [ ] Dependencies installed successfully
-- [ ] No error messages
-
-#### Verify Configuration (Step 5)
-```powershell
-# Validate JSON
+# Validar JSON
 Get-Content agents.json | ConvertFrom-Json
 
-# Check MT5 paths
+# Verificar rutas de MT5
 Test-Path "C:/Program Files/FundedNext MT5 Terminal/terminal64.exe"
 Test-Path "C:/Program Files/Five Percent Online MetaTrader 5/terminal64.exe"
+Test-Path "C:\Program Files\FTMO Global Markets MT5 Terminal\terminal64.exe"
 ```
-- [ ] JSON is valid
-- [ ] MT5 terminal paths exist
-- [ ] Agent count matches expected: __________
+- [ ] JSON es válido
+- [ ] Las rutas de terminal MT5 existen (FundedNext, Five Percent, FTMO)
+- [ ] El conteo de agentes coincide con lo esperado: __________
 
-#### Start Launcher (Step 6)
+#### Crear Reglas de Firewall (Paso 3)
+```powershell
+# Crear reglas de entrada para cada puerto (ajustar puertos según tu configuración)
+New-NetFirewallRule -DisplayName "VPS Agent Port 8000" -Direction Inbound -LocalPort 8000 -Protocol TCP -Action Allow
+New-NetFirewallRule -DisplayName "VPS Agent Port 8001" -Direction Inbound -LocalPort 8001 -Protocol TCP -Action Allow
+New-NetFirewallRule -DisplayName "VPS Agent Port 8002" -Direction Inbound -LocalPort 8002 -Protocol TCP -Action Allow
+```
+- [ ] Reglas de firewall creadas para todos los puertos
+- [ ] Reglas verificadas en la configuración del Firewall de Windows
+
+#### Verificar que los Puertos Estén Libres (Paso 4)
+```powershell
+# Verificar si los puertos están en uso
+netstat -ano | findstr ":8000"
+netstat -ano | findstr ":8001"
+netstat -ano | findstr ":8002"
+
+# Si algún puerto está en uso, matar el proceso (usar PID de la salida de netstat)
+# taskkill /F /PID <NUMERO_PID>
+```
+- [ ] Todos los puertos requeridos están libres
+- [ ] No se encontraron procesos en conflicto
+
+#### Iniciar Launcher (Paso 5)
 ```powershell
 python launcher.py
 ```
-**Expected output:**
+**Salida esperada:**
 ```
 🚀 Starting X agent process(es)...
 ============================================================
@@ -129,243 +123,87 @@ python launcher.py
     ✅ Started (PID: XXXX)
   Starting VPSX-FivePercent on port 8001...
     ✅ Started (PID: YYYY)
+  Starting VPSX-FTMO on port 8002...
+    ✅ Started (PID: ZZZZ)
 ============================================================
 ```
-- [ ] Launcher started successfully
-- [ ] All agents started (PIDs noted: __________)
-- [ ] No error messages in startup
+- [ ] Launcher iniciado exitosamente
+- [ ] Todos los agentes iniciados (PIDs anotados: __________)
+- [ ] Sin bucles de crash o mensajes de error
+- [ ] Sin errores de "puerto ya en uso" (Error 10048)
 
-#### Wait 60-90 Seconds for Health Checks
+#### Esperar 60-90 Segundos para las Verificaciones de Salud
 
-#### Verify Health Checks (Step 7)
+#### Verificar Chequeos de Salud (Paso 6)
 ```powershell
-# Open another PowerShell window
+# Abrir otra ventana de PowerShell
 cd C:\Users\Administrator\Desktop\vps-agent
 python view_logs.py VPSX-FundedNext
 ```
-**Look for (every 60 seconds):**
+**Buscar (cada 60 segundos):**
 ```
 INFO: Running periodic health check for VPSX-FundedNext
 INFO: Health check passed for [account]
 ```
-- [ ] Health checks appearing every 60 seconds
-- [ ] Health checks passing for all accounts
-- [ ] No connection errors
+- [ ] Chequeos de salud apareciendo cada 60 segundos
+- [ ] Chequeos de salud pasando para todas las cuentas
+- [ ] Sin errores de conexión
 
-#### Test Endpoints (Step 8)
+#### Probar Endpoints (Paso 7)
 ```powershell
 Invoke-RestMethod -Uri http://localhost:8000/health
 Invoke-RestMethod -Uri http://localhost:8001/health
+Invoke-RestMethod -Uri http://localhost:8002/health
 Invoke-RestMethod -Uri http://localhost:8000/accounts
 Invoke-RestMethod -Uri http://localhost:8001/accounts
+Invoke-RestMethod -Uri http://localhost:8002/accounts
 ```
-- [ ] /health endpoint responds (port 8000)
-- [ ] /health endpoint responds (port 8001)
-- [ ] /accounts endpoint returns data (port 8000)
-- [ ] /accounts endpoint returns data (port 8001)
+- [ ] Endpoint /health responde (todos los puertos)
+- [ ] Endpoint /accounts retorna datos (todos los puertos)
+- [ ] Los datos de respuesta se ven correctos
 
-#### Setup Auto-Start (Step 9)
+#### Configurar Auto-Inicio (Paso 8)
 ```powershell
 schtasks /create /tn "MT5Launcher" /tr "python C:\Users\Administrator\Desktop\vps-agent\launcher.py" /sc onstart /ru Administrator /rl HIGHEST /f
 ```
-- [ ] Scheduled task created successfully
-- [ ] Task verified in Task Scheduler
+#### Verificación Post-Despliegue
+- [ ] Launcher corriendo en ventana en primer plano
+- [ ] Los chequeos de salud continúan cada 60 segundos
+- [ ] Sin mensajes de error en los logs
 
-#### Post-Deployment Verification
-- [ ] Launcher running in foreground window
-- [ ] Health checks continue every 60 seconds
-- [ ] No error messages in logs
-- [ ] Backend can fetch from this VPS (check backend logs)
-
-#### Notes
-```
-_________________________________________________________________
-_________________________________________________________________
-_________________________________________________________________
-```
 
 ---
 
-## Backend Update Checklist
+## 📝 Notas Importantes
 
-### On Main Backend Server (After All VPS Deployed)
+### Flujo de Deployment:
 
-#### Backup (Step 1)
+**Siempre sigue este orden:**
+1. Descarga la carpeta `vps-agent` nueva de Google Drive
+2. **Borra la carpeta vieja completa del VPS** (si existe)
+3. Copia la carpeta nueva al VPS
+4. Ejecuta `create-vps-config.ps1` para crear `agents.json`
+5. Sigue los pasos 1-8 del deployment
+
+### Solución de Problemas Comunes:
+
+**Error 10048 - Puerto ya en uso:**
 ```powershell
-cd C:\Users\Administrator\Desktop\main-backend\app
-Copy-Item aggregator.py aggregator.py.backup-$(Get-Date -Format 'yyyyMMdd')
-```
-- [ ] Backend aggregator.py backed up
+# Ver qué está usando el puerto
+netstat -ano | findstr ":8000"
 
-#### Update File (Step 2)
-- [ ] Copy new `aggregator.py` from dev machine
-- [ ] Verify file copied successfully
+# Matar proceso específico
+taskkill /F /PID <NUMERO_PID>
 
-#### Restart Backend (Step 3)
-```powershell
-# Stop current backend (Ctrl+C)
-cd C:\Users\Administrator\Desktop\main-backend
-python -m uvicorn app.main:app --host 0.0.0.0 --port 8080
-```
-- [ ] Backend restarted successfully
-- [ ] No startup errors
-
-#### Verify Auto-Recovery (Step 4)
-**Watch logs for auto-recovery messages:**
-```
-INFO: 🔄 Triggering refresh for VPSX-FundedNext
-INFO: ✅ Successfully triggered refresh for VPSX-FundedNext
-```
-- [ ] Backend fetches from all VPS successfully
-- [ ] Total account count matches expected: __________
-- [ ] Auto-recovery logic working (if tested)
-
----
-
-## System-Wide Verification
-
-### After All VPS Deployed
-
-#### Health Check: All Agents Online
-- [ ] Backend logs show successful fetches from all VPS
-- [ ] Total account count: __________ (expected: 20)
-- [ ] No timeout errors in backend logs
-
-#### Health Check: Auto-Reconnection
-**Test on one VPS:**
-```powershell
-Invoke-RestMethod -Method POST -Uri http://localhost:8000/refresh
-```
-**Watch logs for:**
-```
-INFO: Refreshing MT5 connection
-INFO: MT5 shutdown for [account]
-INFO: MT5 initialized successfully for [account]
-```
-- [ ] Manual refresh test successful
-- [ ] MT5 reconnection working
-
-#### Health Check: Backend Auto-Recovery
-**Simulate agent failure and verify:**
-- [ ] Backend tracks consecutive failures
-- [ ] Backend triggers /refresh after 2 failures
-- [ ] Backend retries data fetch
-- [ ] Auto-recovery messages appear in backend logs
-
----
-
-## Monitoring Schedule
-
-### Day 1 (Deployment Day)
-- [ ] All VPS agents respond to /health
-- [ ] Health check logs every 60 seconds
-- [ ] Backend fetches from all agents
-- [ ] No connection errors in logs
-
-### Day 2-7 (First Week)
-- [ ] No manual restarts needed
-- [ ] Auto-reconnection logs if MT5 disconnects
-- [ ] Backend auto-recovery triggers work
-- [ ] All agents remain stable
-
-### Week 2+ (Ongoing)
-- [ ] Monitor for recurring disconnections
-- [ ] Review health check logs for patterns
-- [ ] Verify auto-reconnection success rate
-
----
-
-## Rollback Procedure
-
-### If Deployment Fails on Any VPS
-
-```powershell
-cd C:\Users\Administrator\Desktop\vps-agent
-
-# Stop new launcher
+# O matar todos los procesos Python
 taskkill /F /IM python.exe
-
-# Find backup folder
-dir backup-*
-
-# Restore from backup (replace YYYYMMDD-HHMMSS with actual folder)
-Copy-Item .\backup-YYYYMMDD-HHMMSS\*.py .\app\ -Force
-Copy-Item .\backup-YYYYMMDD-HHMMSS\launcher.py .\ -Force
-Copy-Item .\backup-YYYYMMDD-HHMMSS\agents.json .\ -Force
-
-# Start old launcher
-python launcher.py
 ```
 
-- [ ] Old files restored
-- [ ] Old launcher started successfully
-- [ ] System operational with old code
-
----
-
-## Files Deployed
-
-### VPS Agent Files (9 files)
-1. ✅ `app/main.py` - Health checks + /refresh endpoint
-2. ✅ `app/mt5_service.py` - Auto-reconnection logic
-3. ✅ `app/models.py` - Data models
-4. ✅ `app/config.py` - Configuration
-5. ✅ `app/utils.py` - Logging utilities
-6. ✅ `app/__init__.py` - Package init
-7. ✅ `launcher.py` - Process monitoring
-8. ✅ `view_logs.py` - Log viewer
-9. ✅ `requirements.txt` - Dependencies
-
-### Configuration Files (Per VPS)
-- ✅ VPS1: `agents-vps1.json` (reference only, already deployed)
-- ✅ VPS2: `agents-vps2.json` → rename to `agents.json`
-- ✅ VPS3: `agents-vps3.json` → rename to `agents.json`
-- ✅ VPS4: `agents-vps4.json` → rename to `agents.json`
-- ⏳ VPS5-10: Create configs using `create-vps-config.ps1`
-
-### Backend File
-- ✅ `main-backend/app/aggregator.py` - Auto-recovery logic
-
----
-
-## Contact & Support
-
-### Helper Scripts Created
-- `deploy-to-vps.ps1` - Deployment helper with validation
-- `create-vps-config.ps1` - Config file generator for VPS5-10
-
-### Usage Examples
+**Script create-vps-config.ps1 no se ejecuta:**
 ```powershell
-# Create config for VPS5
-.\create-vps-config.ps1 -VPSName VPS5 -FundedNextAccount 12345678
+# Habilitar ejecución de scripts
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 
-# Deploy to VPS2 (dry run first)
-.\deploy-to-vps.ps1 -VPSName VPS2 -VPSAddress 192.168.1.100 -DryRun
-
-# Deploy to VPS2 (actual deployment)
-.\deploy-to-vps.ps1 -VPSName VPS2 -VPSAddress 192.168.1.100
+# Luego volver a intentar
+.\create-vps-config.ps1
 ```
-
----
-
-## Expected Results
-
-### Before Deployment
-- ❌ VPS2-10 constantly disconnecting
-- ❌ Manual restarts needed multiple times per day
-- ❌ No automatic recovery
-- ❌ "No account found" errors in frontend
-
-### After Deployment
-- ✅ Auto-reconnection within 60 seconds
-- ✅ Proactive health monitoring every 60 seconds
-- ✅ Backend auto-recovery after 2 failures
-- ✅ Process crash auto-restart
-- ✅ No manual intervention needed
-- ✅ Stable, continuous operation
-
----
-
-**Deployment Time Per VPS:** ~10-15 minutes
-**Total Deployment Time (VPS2-10):** ~2-3 hours
-**Risk Level:** Low (proven on VPS1, easy rollback)

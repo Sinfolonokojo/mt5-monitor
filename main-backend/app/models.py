@@ -18,6 +18,7 @@ class AccountData(BaseModel):
     account_holder: Optional[str] = "Unknown"
     prop_firm: Optional[str] = "N/A"
     initial_balance: Optional[float] = 100000.0
+    vs_group: Optional[str] = None
 
 
 class AggregatedResponse(BaseModel):
@@ -42,3 +43,8 @@ class VPSAgentStatus(BaseModel):
 class PhaseUpdateRequest(BaseModel):
     """Request to update phase value"""
     phase: str
+
+
+class VSUpdateRequest(BaseModel):
+    """Request to update VS value"""
+    vs_group: str

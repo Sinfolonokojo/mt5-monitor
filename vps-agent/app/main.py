@@ -2,6 +2,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import logging
+import asyncio
 from .config import settings
 from .mt5_service import MT5Service
 from .models import AccountResponse, AgentHealthResponse
@@ -21,15 +22,62 @@ mt5_service = MT5Service(
     initial_balance=settings.INITIAL_BALANCE
 )
 
+# Background task control
+health_check_task = None
+shutdown_event = asyncio.Event()
+
+
+async def periodic_health_check():
+    """Background task that periodically checks MT5 connection health"""
+    logger.info("Starting periodic health check (every 60 seconds)")
+
+    while not shutdown_event.is_set():
+        try:
+            await asyncio.sleep(60)  # Check every 60 seconds
+
+            if shutdown_event.is_set():
+                break
+
+            logger.info(f"Running periodic health check for {settings.AGENT_NAME}")
+
+            # Test the connection by trying to get account info
+            account_info = mt5_service.get_account_info()
+
+            if account_info:
+                logger.info(f"Health check passed for {settings.ACCOUNT_DISPLAY_NAME}")
+            else:
+                logger.warning(f"Health check failed for {settings.ACCOUNT_DISPLAY_NAME} - connection will auto-reconnect on next request")
+
+        except Exception as e:
+            logger.error(f"Error in periodic health check: {str(e)}")
+
+    logger.info("Periodic health check stopped")
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    global health_check_task
+
     # Startup
     logger.info(f"Starting {settings.AGENT_NAME}")
     mt5_service.initialize()
+
+    # Start background health check
+    health_check_task = asyncio.create_task(periodic_health_check())
+
     yield
+
     # Shutdown
     logger.info(f"Shutting down {settings.AGENT_NAME}")
+    shutdown_event.set()
+
+    # Wait for health check to finish
+    if health_check_task:
+        try:
+            await asyncio.wait_for(health_check_task, timeout=5.0)
+        except asyncio.TimeoutError:
+            logger.warning("Health check task did not finish in time")
+
     mt5_service.shutdown()
 
 

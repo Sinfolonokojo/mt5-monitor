@@ -14,6 +14,17 @@ import signal
 import sys
 from pathlib import Path
 
+# Fix encoding for Windows service compatibility
+if sys.platform == 'win32':
+    import codecs
+    # Check if stdout/stderr are available and need encoding fix
+    if hasattr(sys.stdout, 'buffer') and hasattr(sys.stdout, 'encoding'):
+        if sys.stdout.encoding != 'utf-8':
+            sys.stdout = codecs.getwriter('utf-8')(sys.stdout.buffer, 'ignore')
+    if hasattr(sys.stderr, 'buffer') and hasattr(sys.stderr, 'encoding'):
+        if sys.stderr.encoding != 'utf-8':
+            sys.stderr = codecs.getwriter('utf-8')(sys.stderr.buffer, 'ignore')
+
 
 def load_agent_configs():
     """Load terminal configurations from agents.json"""
@@ -34,7 +45,7 @@ def load_agent_configs():
 
 
 def start_agent(config):
-    """Start a single agent process"""
+    """Start a single agent process and return (process, log_handle)"""
     env = os.environ.copy()
     env["AGENT_NAME"] = config["name"]
     env["AGENT_PORT"] = str(config["port"])
@@ -52,16 +63,24 @@ def start_agent(config):
     ]
 
     try:
-        return subprocess.Popen(
+        # Create log files for each agent
+        log_dir = Path(__file__).parent / "logs"
+        log_dir.mkdir(exist_ok=True)
+
+        log_file = log_dir / f"{config['name']}.log"
+        log_handle = open(log_file, 'a', buffering=1)  # Line buffered
+
+        proc = subprocess.Popen(
             cmd,
             env=env,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            stdout=log_handle,
+            stderr=log_handle,
             cwd=Path(__file__).parent
         )
+        return proc, log_handle
     except Exception as e:
         print(f"❌ Error starting {config['name']}: {e}")
-        return None
+        return None, None
 
 
 def main():
@@ -82,9 +101,9 @@ def main():
         print(f"    Terminal: {config['terminal_path']}")
         print(f"    Account: {config['display_name']}")
 
-        proc = start_agent(config)
+        proc, log_handle = start_agent(config)
         if proc:
-            processes.append((config, proc))
+            processes.append((config, proc, log_handle))
             time.sleep(2)  # Stagger startup to avoid port conflicts
             print(f"    ✅ Started (PID: {proc.pid})")
         else:
@@ -98,23 +117,32 @@ def main():
     print("=" * 60)
     print(f"✅ All {len(processes)} agent(s) started successfully!")
     print("\n📊 Monitoring processes... Press Ctrl+C to stop all agents.")
+    print("\n📝 Agent logs are being written to:")
+    for config, proc, log_handle in processes:
+        log_file = Path(__file__).parent / "logs" / f"{config['name']}.log"
+        print(f"   {config['name']}: {log_file}")
     print()
 
     def signal_handler(sig, frame):
         """Handle Ctrl+C gracefully"""
         print("\n\n🛑 Stopping all agents...")
-        for config, proc in processes:
+        for config, proc, log_handle in processes:
             print(f"  Stopping {config['name']} (PID: {proc.pid})...")
             proc.terminate()
 
         # Wait for graceful shutdown
         time.sleep(2)
 
-        # Force kill if still running
-        for config, proc in processes:
+        # Force kill if still running and close log handles
+        for config, proc, log_handle in processes:
             if proc.poll() is None:
                 print(f"  Force killing {config['name']}...")
                 proc.kill()
+            # Close log file handle
+            try:
+                log_handle.close()
+            except:
+                pass
 
         print("✅ All agents stopped.")
         sys.exit(0)
@@ -128,16 +156,23 @@ def main():
         while True:
             time.sleep(5)
 
-            for i, (config, proc) in enumerate(processes):
+            for i, (config, proc, log_handle) in enumerate(processes):
                 returncode = proc.poll()
                 if returncode is not None:
                     print(f"\n⚠️  {config['name']} crashed with code {returncode}!")
                     print(f"    Restarting in {restart_delay} seconds...")
+
+                    # Close old log handle
+                    try:
+                        log_handle.close()
+                    except:
+                        pass
+
                     time.sleep(restart_delay)
 
-                    new_proc = start_agent(config)
+                    new_proc, new_log_handle = start_agent(config)
                     if new_proc:
-                        processes[i] = (config, new_proc)
+                        processes[i] = (config, new_proc, new_log_handle)
                         print(f"    ✅ Restarted (PID: {new_proc.pid})")
                     else:
                         print(f"    ❌ Failed to restart")

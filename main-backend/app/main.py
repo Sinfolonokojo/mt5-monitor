@@ -6,7 +6,8 @@ from .config import settings
 from .aggregator import data_aggregator
 from .cache import cache
 from .phase_manager import phase_manager
-from .models import AggregatedResponse, VPSAgentStatus, AccountData, PhaseUpdateRequest
+from .vs_manager import vs_manager
+from .models import AggregatedResponse, VPSAgentStatus, AccountData, PhaseUpdateRequest, VSUpdateRequest
 from .utils import setup_logging
 from typing import List
 
@@ -74,7 +75,8 @@ async def get_all_accounts(force_refresh: bool = False):
                 last_updated=datetime.fromisoformat(raw_account["last_updated"].replace("Z", "+00:00")) if isinstance(raw_account["last_updated"], str) else raw_account["last_updated"],
                 account_holder=raw_account.get("account_holder", "Unknown"),
                 prop_firm=raw_account.get("prop_firm", "N/A"),
-                initial_balance=raw_account.get("initial_balance", 100000.0)
+                initial_balance=raw_account.get("initial_balance", 100000.0),
+                vs_group=vs_manager.get_vs(raw_account["account_number"])
             )
             accounts.append(account)
             row_number += 1
@@ -118,6 +120,32 @@ async def update_account_phase(account_number: int, request: PhaseUpdateRequest)
         }
     except Exception as e:
         logger.error(f"Error updating phase: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.put("/api/accounts/{account_number}/vs")
+async def update_account_vs(account_number: int, request: VSUpdateRequest):
+    """Update VS (Virtual Stop) value for an account"""
+    try:
+        logger.info(f"Updating VS for account {account_number} to '{request.vs_group}'")
+        success, message = vs_manager.update_vs(account_number, request.vs_group)
+
+        if not success:
+            raise HTTPException(status_code=400, detail=message)
+
+        # Clear cache to reflect the change immediately
+        cache.clear()
+
+        return {
+            "status": "success",
+            "message": message,
+            "account_number": account_number,
+            "new_vs": request.vs_group
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating VS: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

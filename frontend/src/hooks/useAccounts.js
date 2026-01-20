@@ -35,12 +35,23 @@ export const useAccounts = () => {
     }
   }, [fetchAccounts]);
 
+  const updateVS = useCallback(async (accountNumber, vsValue) => {
+    try {
+      await apiService.updateVS(accountNumber, vsValue);
+      // Refresh data after updating VS
+      await fetchAccounts(true);
+    } catch (err) {
+      throw err;
+    }
+  }, [fetchAccounts]);
+
   return {
     data,
     loading,
     error,
     fetchAccounts,
     refresh,
-    updatePhase
+    updatePhase,
+    updateVS
   };
 };

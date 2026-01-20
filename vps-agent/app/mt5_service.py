@@ -2,6 +2,7 @@ import MetaTrader5 as mt5
 from typing import Optional
 from datetime import datetime, timedelta
 import logging
+import time
 from .models import AccountInfo, AccountResponse
 
 logger = logging.getLogger(__name__)
@@ -28,6 +29,9 @@ class MT5Service:
         self.prop_firm = prop_firm
         self.initial_balance = initial_balance
         self.initialized = False
+        self.last_successful_connection = None
+        self.reconnection_attempts = 0
+        self.max_reconnection_attempts = 3
 
     def initialize(self) -> bool:
         """Initialize MT5 connection to specific terminal"""
@@ -45,14 +49,59 @@ class MT5Service:
         self.initialized = False
         logger.info(f"MT5 shutdown for {self.display_name}")
 
+    def reconnect(self) -> bool:
+        """Attempt to reconnect to MT5 terminal with retry logic"""
+        logger.warning(f"Attempting to reconnect MT5 for {self.display_name}...")
+
+        # Shutdown existing connection first
+        try:
+            if self.initialized:
+                self.shutdown()
+        except Exception as e:
+            logger.error(f"Error during shutdown before reconnect: {str(e)}")
+
+        # Try reconnecting with exponential backoff
+        for attempt in range(1, self.max_reconnection_attempts + 1):
+            logger.info(f"Reconnection attempt {attempt}/{self.max_reconnection_attempts} for {self.display_name}")
+
+            if self.initialize():
+                logger.info(f"✅ Reconnection successful for {self.display_name}")
+                self.reconnection_attempts = 0
+                self.last_successful_connection = datetime.now()
+                return True
+
+            # Wait before next attempt (exponential backoff: 2s, 4s, 8s)
+            if attempt < self.max_reconnection_attempts:
+                wait_time = 2 ** attempt
+                logger.warning(f"Reconnection failed, waiting {wait_time}s before retry...")
+                time.sleep(wait_time)
+
+        logger.error(f"❌ All reconnection attempts failed for {self.display_name}")
+        self.reconnection_attempts += 1
+        return False
+
     def get_account_info(self) -> Optional[AccountInfo]:
-        """Get info from the already-logged-in account in this terminal"""
+        """Get info from the already-logged-in account in this terminal with auto-reconnect"""
         try:
             # Just read from already-logged-in account - NO LOGIN CALL
             account_info = mt5.account_info()
             if account_info is None:
-                logger.error(f"Failed to get account info from logged-in terminal for {self.display_name}")
-                return None
+                logger.warning(f"Failed to get account info from logged-in terminal for {self.display_name}")
+
+                # Attempt to reconnect
+                if self.reconnect():
+                    # Retry getting account info after reconnection
+                    account_info = mt5.account_info()
+                    if account_info is None:
+                        logger.error(f"Still no account info after reconnection for {self.display_name}")
+                        return None
+                else:
+                    logger.error(f"Reconnection failed for {self.display_name}")
+                    return None
+
+            # Successfully got account info (either first try or after reconnect)
+            self.last_successful_connection = datetime.now()
+            self.reconnection_attempts = 0
 
             return AccountInfo(
                 account_number=account_info.login,
@@ -72,6 +121,30 @@ class MT5Service:
             )
         except Exception as e:
             logger.error(f"Error getting account info for {self.display_name}: {str(e)}")
+            # Try reconnecting on exception as well
+            if self.reconnect():
+                try:
+                    account_info = mt5.account_info()
+                    if account_info:
+                        self.last_successful_connection = datetime.now()
+                        return AccountInfo(
+                            account_number=account_info.login,
+                            account_name=account_info.name,
+                            balance=account_info.balance,
+                            equity=account_info.equity,
+                            margin=account_info.margin,
+                            margin_free=account_info.margin_free,
+                            margin_level=account_info.margin_level,
+                            profit=account_info.profit,
+                            server=account_info.server,
+                            company=account_info.company,
+                            currency=account_info.currency,
+                            leverage=account_info.leverage,
+                            trade_allowed=account_info.trade_allowed,
+                            connected=True
+                        )
+                except Exception as retry_error:
+                    logger.error(f"Retry after reconnect failed: {str(retry_error)}")
             return None
 
     def has_open_positions(self) -> bool:

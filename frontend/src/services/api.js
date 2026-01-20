@@ -54,6 +54,29 @@ class ApiService {
     }
   }
 
+  async updateVS(accountNumber, vsValue) {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/accounts/${accountNumber}/vs`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ vs_group: vsValue })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        const errorMessage = errorData.detail || `HTTP error! status: ${response.status}`;
+        throw new Error(errorMessage);
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.error('Error updating VS:', error);
+      throw error;
+    }
+  }
+
   async forceRefresh() {
     try {
       const response = await fetch(`${API_BASE_URL}/api/refresh`, {
