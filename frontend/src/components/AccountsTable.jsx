@@ -3,9 +3,12 @@ import { formatCurrency, formatDate, calculateVSGroups, exportToExcel } from '..
 import TableRow from './TableRow';
 import LoadingSpinner from './LoadingSpinner';
 import ErrorMessage from './ErrorMessage';
+import AccountDetailsModal from './AccountDetailsModal';
 
 const AccountsTable = ({ data, loading, error, onRefresh, editMode, onPhaseUpdate, onVSUpdate }) => {
   const [sortMode, setSortMode] = useState('VS'); // 'VS', 'PL_DESC', 'PL_ASC'
+  const [selectedAccount, setSelectedAccount] = useState(null);
+  const [openTradeFilter, setOpenTradeFilter] = useState('all'); // 'all', 'with_open', 'without_open'
 
   // Calculate automatic VS groups (with null safety)
   const autoVSGroups = useMemo(() => {
@@ -30,7 +33,7 @@ const AccountsTable = ({ data, loading, error, onRefresh, editMode, onPhaseUpdat
     return groups;
   }, [data?.accounts, autoVSGroups]);
 
-  // Sort accounts based on current sort mode (with null safety)
+  // Sort and filter accounts based on current sort mode and filters
   const sortedAccounts = useMemo(() => {
     if (!data?.accounts || !Array.isArray(data.accounts)) return [];
 
@@ -45,8 +48,16 @@ const AccountsTable = ({ data, loading, error, onRefresh, editMode, onPhaseUpdat
       }
     }
 
-    // Sort the deduplicated accounts
-    return uniqueAccounts.sort((a, b) => {
+    // Filter by open trade status
+    let filteredAccounts = uniqueAccounts;
+    if (openTradeFilter === 'with_open') {
+      filteredAccounts = uniqueAccounts.filter(account => account.has_open_position);
+    } else if (openTradeFilter === 'without_open') {
+      filteredAccounts = uniqueAccounts.filter(account => !account.has_open_position);
+    }
+
+    // Sort the filtered accounts
+    return filteredAccounts.sort((a, b) => {
       const aPL = a.balance - (a.initial_balance || 100000);
       const bPL = b.balance - (b.initial_balance || 100000);
 
@@ -85,7 +96,7 @@ const AccountsTable = ({ data, loading, error, onRefresh, editMode, onPhaseUpdat
         return bPL - aPL;
       }
     });
-  }, [data?.accounts, sortMode, mergedVSGroups]);
+  }, [data?.accounts, sortMode, mergedVSGroups, openTradeFilter]);
 
   // Early returns after all hooks
   if (loading) {
@@ -115,6 +126,17 @@ const AccountsTable = ({ data, loading, error, onRefresh, editMode, onPhaseUpdat
 
   const handleVSHeaderClick = () => {
     setSortMode('VS');
+  };
+
+  const handleOpenTradeHeaderClick = () => {
+    // Cycle through: all -> with_open -> without_open -> all
+    if (openTradeFilter === 'all') {
+      setOpenTradeFilter('with_open');
+    } else if (openTradeFilter === 'with_open') {
+      setOpenTradeFilter('without_open');
+    } else {
+      setOpenTradeFilter('all');
+    }
   };
 
   const handleExportToExcel = () => {
@@ -255,9 +277,18 @@ const AccountsTable = ({ data, loading, error, onRefresh, editMode, onPhaseUpdat
                 Fase
               </th>
               <th
-                style={{ padding: '12px 16px', textAlign: 'center', fontWeight: '600' }}
+                onClick={handleOpenTradeHeaderClick}
+                style={{
+                  padding: '12px 16px',
+                  textAlign: 'center',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  userSelect: 'none',
+                  backgroundColor: openTradeFilter !== 'all' ? '#e5e7eb' : 'transparent',
+                  transition: 'background-color 0.2s'
+                }}
               >
-                Open Trade
+                Open Trade {openTradeFilter === 'with_open' ? '✓' : openTradeFilter === 'without_open' ? '✗' : ''}
               </th>
               <th
                 onClick={handleVSHeaderClick}
@@ -284,6 +315,7 @@ const AccountsTable = ({ data, loading, error, onRefresh, editMode, onPhaseUpdat
                 onPhaseUpdate={onPhaseUpdate}
                 onVSUpdate={onVSUpdate}
                 vsGroup={mergedVSGroups[account.account_number]}
+                onRowClick={(account) => setSelectedAccount(account)}
               />
             ))}
           </tbody>
@@ -301,6 +333,15 @@ const AccountsTable = ({ data, loading, error, onRefresh, editMode, onPhaseUpdat
       >
         Last updated: {formatDate(data.last_refresh)}
       </div>
+
+      {/* Account Details Modal */}
+      {selectedAccount && (
+        <AccountDetailsModal
+          account={selectedAccount}
+          vsGroup={mergedVSGroups[selectedAccount.account_number]}
+          onClose={() => setSelectedAccount(null)}
+        />
+      )}
     </div>
   );
 };

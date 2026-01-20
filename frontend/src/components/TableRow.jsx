@@ -5,8 +5,9 @@ import {
   getRowBackgroundColor
 } from '../utils/formatters';
 import EditablePhase from './EditablePhase';
+import EditableVS from './EditableVS';
 
-const TableRow = ({ account, editMode, onPhaseUpdate, vsGroup }) => {
+const TableRow = ({ account, editMode, onPhaseUpdate, onVSUpdate, vsGroup, onRowClick }) => {
   const initialBalance = account.initial_balance || 100000;
   const profitLoss = calculateProfitLoss(account.balance, initialBalance);
   const maxLoss = calculateMaxLoss(account.balance, initialBalance);
@@ -15,8 +16,32 @@ const TableRow = ({ account, editMode, onPhaseUpdate, vsGroup }) => {
   const plColor = profitLoss >= 0 ? '#22c55e' : '#ef4444';
   const maxLossColor = maxLoss >= 0 ? '#22c55e' : '#ef4444';
 
+  const handleRowClick = (e) => {
+    // Don't trigger if clicking on editable elements
+    if (e.target.tagName === 'SELECT' || e.target.tagName === 'INPUT' || e.target.closest('.editable-element')) {
+      return;
+    }
+    onRowClick && onRowClick(account);
+  };
+
   return (
-    <tr style={{ borderBottom: '1px solid #e5e7eb', backgroundColor: rowBgColor }}>
+    <tr
+      onClick={handleRowClick}
+      style={{
+        borderBottom: '1px solid #e5e7eb',
+        backgroundColor: rowBgColor,
+        cursor: 'pointer',
+        transition: 'background-color 0.2s',
+      }}
+      onMouseEnter={(e) => {
+        if (!editMode) {
+          e.currentTarget.style.backgroundColor = '#f9fafb';
+        }
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.backgroundColor = rowBgColor;
+      }}
+    >
       {/* Connection Status Indicator */}
       <td style={{ padding: '12px 16px', textAlign: 'center' }}>
         <div
@@ -28,11 +53,6 @@ const TableRow = ({ account, editMode, onPhaseUpdate, vsGroup }) => {
             margin: '0 auto'
           }}
         />
-      </td>
-
-      {/* Row Number */}
-      <td style={{ padding: '12px 16px', textAlign: 'center' }}>
-        {account.row_number}
       </td>
 
       {/* Days Operating */}
@@ -50,13 +70,10 @@ const TableRow = ({ account, editMode, onPhaseUpdate, vsGroup }) => {
         {account.prop_firm || 'N/A'}
       </td>
 
-      {/* Account Name/Number */}
+      {/* Account Number */}
       <td style={{ padding: '12px 16px' }}>
-        <div>
-          <div style={{ fontWeight: '500' }}>{account.account_name}</div>
-          <div style={{ fontSize: '12px', color: '#6b7280' }}>
-            #{account.account_number}
-          </div>
+        <div style={{ fontWeight: '500' }}>
+          {account.account_number}
         </div>
       </td>
 
@@ -110,15 +127,12 @@ const TableRow = ({ account, editMode, onPhaseUpdate, vsGroup }) => {
 
       {/* VS Column */}
       <td style={{ padding: '12px 16px', textAlign: 'center' }}>
-        <div
-          style={{
-            fontWeight: '600',
-            color: vsGroup ? '#3b82f6' : '#9ca3af',
-            fontSize: '14px'
-          }}
-        >
-          {vsGroup || '-'}
-        </div>
+        <EditableVS
+          account={account}
+          editMode={editMode}
+          onUpdate={onVSUpdate}
+          vsGroup={vsGroup}
+        />
       </td>
     </tr>
   );

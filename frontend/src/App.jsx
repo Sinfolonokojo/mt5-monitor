@@ -1,18 +1,31 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useAccounts } from './hooks/useAccounts';
 import AccountsTable from './components/AccountsTable';
 import './App.css';
 
 function App() {
-  const { data, loading, error, fetchAccounts, refresh, updatePhase } = useAccounts();
+  const { data, loading, error, fetchAccounts, refresh, updatePhase, updateVS } = useAccounts();
   const [editMode, setEditMode] = useState(false);
 
   useEffect(() => {
     fetchAccounts();
   }, [fetchAccounts]);
 
+  // Silent auto-refresh every 10 minutes
+  useEffect(() => {
+    const timer = setInterval(() => {
+      refresh();
+    }, 600000); // 10 minutes
+
+    return () => clearInterval(timer);
+  }, [refresh]);
+
   const handlePhaseUpdate = async (accountNumber, phaseValue) => {
     await updatePhase(accountNumber, phaseValue);
+  };
+
+  const handleVSUpdate = async (accountNumber, vsValue) => {
+    await updateVS(accountNumber, vsValue);
   };
 
   return (
@@ -25,7 +38,7 @@ function App() {
             className={`edit-mode-button ${editMode ? 'active' : ''}`}
             disabled={loading}
           >
-            {editMode ? 'Exit Edit Mode' : 'Edit Phases'}
+            {editMode ? 'Exit Edit Mode' : 'Edit Mode'}
           </button>
           <button
             onClick={refresh}
@@ -45,6 +58,7 @@ function App() {
           onRefresh={refresh}
           editMode={editMode}
           onPhaseUpdate={handlePhaseUpdate}
+          onVSUpdate={handleVSUpdate}
         />
       </main>
 
