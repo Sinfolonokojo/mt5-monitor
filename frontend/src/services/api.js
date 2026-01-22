@@ -113,9 +113,10 @@ class ApiService {
     }
   }
 
-  async fetchTradeHistory(accountNumber, days = 30) {
+  async fetchTradeHistory(accountNumber, forceRefresh = false) {
     try {
-      const response = await fetch(`${API_BASE_URL}/api/accounts/${accountNumber}/trade-history?days=${days}`);
+      const url = `${API_BASE_URL}/api/accounts/${accountNumber}/trade-history${forceRefresh ? '?force_refresh=true' : ''}`;
+      const response = await fetch(url);
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -130,9 +131,9 @@ class ApiService {
     }
   }
 
-  async syncTradesToGoogleSheets(accountNumber, days = 30) {
+  async syncTradesToGoogleSheets(accountNumber) {
     try {
-      const response = await fetch(`${API_BASE_URL}/api/accounts/${accountNumber}/sync-trades-to-sheets?days=${days}`, {
+      const response = await fetch(`${API_BASE_URL}/api/accounts/${accountNumber}/sync-trades-to-sheets`, {
         method: 'POST'
       });
 

@@ -149,22 +149,35 @@ async def refresh_mt5():
 
 
 @app.get("/trade-history", response_model=TradeHistoryResponse)
-async def get_trade_history(days: int = 30):
+async def get_trade_history(from_date: str = None, days: int = None):
     """
-    Get detailed trade history for the last N days (closed trades only)
+    Get detailed trade history (closed trades only)
 
     Args:
-        days: Number of days to look back (default 30, max 90)
+        from_date: ISO format date string to fetch trades from (optional, for incremental fetching)
+        days: Number of days to look back (optional, default 90 if from_date not provided)
     """
     try:
-        # Validate days parameter
-        if days < 1:
-            raise HTTPException(status_code=400, detail="Days parameter must be at least 1")
-        if days > 90:
-            raise HTTPException(status_code=400, detail="Days parameter cannot exceed 90")
+        from datetime import datetime
 
-        logger.info(f"Fetching trade history for {settings.ACCOUNT_DISPLAY_NAME} (last {days} days)")
-        trade_history = mt5_service.get_trade_history(days)
+        # Parse from_date if provided
+        parsed_from_date = None
+        if from_date:
+            try:
+                parsed_from_date = datetime.fromisoformat(from_date.replace('Z', '+00:00'))
+                logger.info(f"Fetching trade history from {from_date}")
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid from_date format. Use ISO format (YYYY-MM-DDTHH:MM:SS)")
+
+        # Validate days parameter if provided
+        if days is not None:
+            if days < 1:
+                raise HTTPException(status_code=400, detail="Days parameter must be at least 1")
+            if days > 365:
+                raise HTTPException(status_code=400, detail="Days parameter cannot exceed 365")
+
+        logger.info(f"Fetching trade history for {settings.ACCOUNT_DISPLAY_NAME}")
+        trade_history = mt5_service.get_trade_history(from_date=parsed_from_date, days=days)
 
         if trade_history is None:
             raise HTTPException(status_code=500, detail="Failed to fetch trade history")

@@ -8,6 +8,8 @@ from .cache import cache
 from .phase_manager import phase_manager
 from .vs_manager import vs_manager
 from .google_sheets_service import google_sheets_service
+from .trade_cache_manager import trade_cache_manager
+from .account_vps_cache import account_vps_cache
 from .models import AggregatedResponse, VPSAgentStatus, AccountData, PhaseUpdateRequest, VSUpdateRequest, TradeHistoryResponse
 from .utils import setup_logging
 from typing import List
@@ -57,6 +59,9 @@ async def get_all_accounts(force_refresh: bool = False):
         # Fetch fresh data from all agents
         logger.info("Fetching data from all VPS agents")
         raw_accounts, agent_statuses = await data_aggregator.fetch_all_agents()
+
+        # Update account-VPS mapping cache
+        account_vps_cache.update_bulk(raw_accounts)
 
         # Enrich with phase data and create AccountData objects
         accounts = []
@@ -200,40 +205,65 @@ async def sync_to_google_sheets():
 async def force_refresh():
     """Clear cache and force data refresh"""
     cache.clear()
+    account_vps_cache.clear()
     return {"status": "success", "message": "Cache cleared, next request will fetch fresh data"}
 
 
 @app.get("/api/accounts/{account_number}/trade-history", response_model=TradeHistoryResponse)
-async def get_trade_history(account_number: int, days: int = 30):
+async def get_trade_history(account_number: int, force_refresh: bool = False):
     """
-    Get detailed trade history for a specific account
+    Get detailed trade history for a specific account with incremental caching
 
     Args:
         account_number: The account number to fetch history for
-        days: Number of days to look back (default 30, max 90)
+        force_refresh: If True, clear cache and fetch all trades from scratch
     """
     try:
-        # Validate days parameter
-        if days < 1:
-            raise HTTPException(status_code=400, detail="Days parameter must be at least 1")
-        if days > 90:
-            raise HTTPException(status_code=400, detail="Days parameter cannot exceed 90")
+        logger.info(f"Fetching trade history for account {account_number} (force_refresh={force_refresh})")
 
-        logger.info(f"Fetching trade history for account {account_number} (last {days} days)")
+        # If force refresh, clear the cache for this account
+        if force_refresh:
+            trade_cache_manager.clear_account_cache(account_number)
+            logger.info(f"Cache cleared for account {account_number}")
 
-        # Fetch trade history from the appropriate VPS agent
-        result = await data_aggregator.fetch_trade_history(account_number, days)
+        # Get last sync time from cache
+        last_sync_time = trade_cache_manager.get_last_sync_time(account_number)
+
+        # Determine fetch strategy
+        if last_sync_time:
+            # Incremental fetch: only get trades since last sync
+            logger.info(f"Incremental fetch: getting trades since {last_sync_time}")
+            result = await data_aggregator.fetch_trade_history(account_number, from_date=last_sync_time)
+        else:
+            # First fetch: get last 30 days of trades
+            logger.info(f"Initial fetch: getting last 30 days of trades")
+            result = await data_aggregator.fetch_trade_history(account_number, days=30)
 
         if not result.get("success"):
             error_msg = result.get("error", "Unknown error")
             logger.error(f"Failed to fetch trade history: {error_msg}")
             raise HTTPException(status_code=404 if "not found" in error_msg.lower() else 500, detail=error_msg)
 
-        # Remove the success flag before returning
+        # Remove the success flag
         result.pop("success", None)
 
-        logger.info(f"Successfully fetched {result.get('total_trades', 0)} trades for account {account_number}")
-        return result
+        # Convert trade dictionaries for caching (ensure serializable)
+        new_trades = result.get('trades', [])
+
+        # Update cache with new trades (incremental merge)
+        cached_result = trade_cache_manager.update_trades(account_number, new_trades)
+
+        logger.info(f"Trade history updated: {cached_result['new_trades_count']} new, "
+                   f"{cached_result['total_trades']} total trades for account {account_number}")
+
+        # Return merged result from cache
+        return TradeHistoryResponse(
+            account_number=cached_result['account_number'],
+            trades=cached_result['trades'],
+            total_trades=cached_result['total_trades'],
+            total_profit=cached_result['total_profit'],
+            total_commission=cached_result['total_commission']
+        )
 
     except HTTPException:
         raise
@@ -243,27 +273,25 @@ async def get_trade_history(account_number: int, days: int = 30):
 
 
 @app.post("/api/accounts/{account_number}/sync-trades-to-sheets")
-async def sync_trade_history_to_sheets(account_number: int, days: int = 30):
+async def sync_trade_history_to_sheets(account_number: int):
     """
-    Sync trade history for a specific account to Google Sheets
+    Sync trade history for a specific account to Google Sheets (uses cached trades)
 
     Args:
         account_number: The account number to sync trades for
-        days: Number of days to look back (default 30)
     """
     try:
         logger.info(f"Starting Google Sheets sync for trade history of account {account_number}")
 
-        # Fetch trade history
-        trade_history = await data_aggregator.fetch_trade_history(account_number, days)
+        # Get cached trade summary
+        trade_history = trade_cache_manager.get_trade_summary(account_number)
 
-        if not trade_history.get("success"):
-            error_msg = trade_history.get("error", "Unknown error")
-            logger.error(f"Failed to fetch trade history: {error_msg}")
-            raise HTTPException(status_code=404 if "not found" in error_msg.lower() else 500, detail=error_msg)
-
-        # Remove success flag
-        trade_history.pop("success", None)
+        if not trade_history.get('cached') or trade_history.get('total_trades', 0) == 0:
+            # No cached trades, fetch first
+            logger.info(f"No cached trades found, fetching first...")
+            await get_trade_history(account_number, force_refresh=False)
+            # Get updated cache
+            trade_history = trade_cache_manager.get_trade_summary(account_number)
 
         # Sync to Google Sheets
         result = google_sheets_service.sync_trade_history(trade_history)

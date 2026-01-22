@@ -251,12 +251,13 @@ class MT5Service:
                 initial_balance=self.initial_balance
             )
 
-    def get_trade_history(self, days: int = 30) -> Optional[TradeHistoryResponse]:
+    def get_trade_history(self, from_date: Optional[datetime] = None, days: Optional[int] = None) -> Optional[TradeHistoryResponse]:
         """
-        Get detailed trade history for the last N days (closed trades only)
+        Get detailed trade history (closed trades only)
 
         Args:
-            days: Number of days to look back (default 30)
+            from_date: Start date for fetching trades (optional, for incremental fetching)
+            days: Number of days to look back (optional, ignored if from_date is provided)
 
         Returns:
             TradeHistoryResponse with list of closed trades
@@ -270,8 +271,15 @@ class MT5Service:
                 logger.error(f"Cannot get trade history - account not connected for {self.display_name}")
                 return None
 
-            # Get deals from last N days
-            from_date = datetime.now() - timedelta(days=days)
+            # Determine start date
+            if from_date is None:
+                # If no from_date, use days parameter (default 30 days for initial fetch)
+                days = days if days is not None else 30
+                from_date = datetime.now() - timedelta(days=days)
+
+            logger.info(f"Fetching trade history for {self.display_name} from {from_date.strftime('%Y-%m-%d')}")
+
+            # Get deals from specified date
             deals = mt5.history_deals_get(from_date, datetime.now())
 
             if deals is None or len(deals) == 0:

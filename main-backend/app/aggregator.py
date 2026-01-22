@@ -5,6 +5,7 @@ import logging
 from datetime import datetime
 from .config import settings
 from .models import AccountData, VPSAgentStatus
+from .account_vps_cache import account_vps_cache
 
 logger = logging.getLogger(__name__)
 
@@ -129,32 +130,42 @@ class DataAggregator:
         logger.info(f"Fetched total of {len(all_accounts)} accounts from all agents")
         return all_accounts, agent_statuses
 
-    async def fetch_trade_history(self, account_number: int, days: int = 30) -> Dict:
+    async def fetch_trade_history(self, account_number: int, from_date: str = None, days: int = None) -> Dict:
         """
         Fetch trade history for a specific account from the appropriate VPS agent
 
         Args:
             account_number: The account number to fetch history for
-            days: Number of days to look back (default 30)
+            from_date: ISO format date string to fetch trades from (optional, for incremental fetching)
+            days: Number of days to look back (optional, default 30 if from_date not provided)
 
         Returns:
             Dictionary with trade history or error
         """
-        logger.info(f"Fetching trade history for account {account_number} (last {days} days)")
+        logger.info(f"Fetching trade history for account {account_number}")
 
-        # First, get all accounts to find which agent has this account
-        all_accounts, _ = await self.fetch_all_agents()
+        # Check cache first for quick lookup
+        target_agent = account_vps_cache.get(account_number)
 
-        # Find the agent that has this account
-        target_agent = None
-        for account in all_accounts:
-            if account.get("account_number") == account_number:
-                target_agent = account.get("vps_source")
-                break
+        if target_agent:
+            logger.info(f"Found account {account_number} in cache -> {target_agent}")
+        else:
+            # Cache miss - need to fetch all accounts to find the right agent
+            logger.info(f"Cache miss for account {account_number}, fetching all agents")
+            all_accounts, _ = await self.fetch_all_agents()
 
-        if not target_agent:
-            logger.error(f"Account {account_number} not found in any VPS agent")
-            return {"error": f"Account {account_number} not found", "success": False}
+            # Update cache with fresh data
+            account_vps_cache.update_bulk(all_accounts)
+
+            # Find the agent that has this account
+            for account in all_accounts:
+                if account.get("account_number") == account_number:
+                    target_agent = account.get("vps_source")
+                    break
+
+            if not target_agent:
+                logger.error(f"Account {account_number} not found in any VPS agent")
+                return {"error": f"Account {account_number} not found", "success": False}
 
         # Find the agent URL
         agent_config = next((a for a in self.vps_agents if a["name"] == target_agent), None)
@@ -162,11 +173,19 @@ class DataAggregator:
             logger.error(f"Agent config not found for {target_agent}")
             return {"error": f"Agent {target_agent} not configured", "success": False}
 
+        # Build query parameters
+        params = {}
+        if from_date:
+            params['from_date'] = from_date
+            logger.info(f"Incremental fetch from {from_date}")
+        elif days:
+            params['days'] = days
+
         # Fetch trade history from the agent
         try:
             async with httpx.AsyncClient(timeout=settings.AGENT_TIMEOUT) as client:
                 logger.info(f"Fetching trade history from {target_agent} at {agent_config['url']}")
-                response = await client.get(f"{agent_config['url']}/trade-history?days={days}")
+                response = await client.get(f"{agent_config['url']}/trade-history", params=params)
                 response.raise_for_status()
                 trade_history = response.json()
                 logger.info(f"Successfully fetched {trade_history.get('total_trades', 0)} trades from {target_agent}")
