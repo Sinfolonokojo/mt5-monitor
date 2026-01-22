@@ -13,8 +13,14 @@ const TableRow = ({ account, editMode, onPhaseUpdate, onVSUpdate, vsGroup, onRow
   const maxLoss = calculateMaxLoss(account.balance, initialBalance);
   const rowBgColor = getRowBackgroundColor(account.balance, initialBalance);
 
-  const plColor = profitLoss >= 0 ? '#22c55e' : '#ef4444';
-  const maxLossColor = maxLoss >= 0 ? '#22c55e' : '#ef4444';
+  // Check for dark mode
+  const isDarkMode = document.body.classList.contains('dark-mode');
+  const greenColor = isDarkMode ? '#4ade80' : '#22c55e';
+  const redColor = isDarkMode ? '#f87171' : '#ef4444';
+  const darkGreenBorder = isDarkMode ? '#22c55e' : '#16a34a';
+
+  const plColor = profitLoss >= 0 ? greenColor : redColor;
+  const maxLossColor = maxLoss >= 0 ? greenColor : redColor;
 
   const handleRowClick = (e) => {
     // Don't trigger if clicking on editable elements
@@ -49,8 +55,9 @@ const TableRow = ({ account, editMode, onPhaseUpdate, onVSUpdate, vsGroup, onRow
             width: '12px',
             height: '12px',
             borderRadius: '50%',
-            backgroundColor: account.status === 'connected' ? '#22c55e' : '#ef4444',
-            margin: '0 auto'
+            backgroundColor: account.status === 'connected' ? greenColor : redColor,
+            margin: '0 auto',
+            boxShadow: isDarkMode ? `0 0 6px ${account.status === 'connected' ? greenColor : redColor}` : 'none'
           }}
         />
       </td>
@@ -117,9 +124,10 @@ const TableRow = ({ account, editMode, onPhaseUpdate, onVSUpdate, vsGroup, onRow
             width: '16px',
             height: '16px',
             borderRadius: '50%',
-            backgroundColor: account.has_open_position ? '#22c55e' : '#e5e7eb',
+            backgroundColor: account.has_open_position ? greenColor : '#e5e7eb',
             margin: '0 auto',
-            border: account.has_open_position ? '2px solid #16a34a' : '2px solid #9ca3af'
+            border: account.has_open_position ? `2px solid ${darkGreenBorder}` : '2px solid #9ca3af',
+            boxShadow: isDarkMode && account.has_open_position ? `0 0 6px ${greenColor}` : 'none'
           }}
           title={account.has_open_position ? 'Has open position' : 'No open position'}
         />
