@@ -1,24 +1,76 @@
+/* CSS Variables for light mode */
+:root {
+  --bg-primary: #f3f4f6;
+  --bg-secondary: #ffffff;
+  --bg-header: #1f2937;
+  --text-primary: #111827;
+  --text-secondary: #6b7280;
+  --text-header: #ffffff;
+  --border-color: #d1d5db;
+  --shadow: rgba(0, 0, 0, 0.1);
+}
+
+/* Dark mode variables */
+body.dark-mode {
+  --bg-primary: #111827;
+  --bg-secondary: #1f2937;
+  --bg-header: #0f172a;
+  --text-primary: #f9fafb;
+  --text-secondary: #9ca3af;
+  --text-header: #f9fafb;
+  --border-color: #374151;
+  --shadow: rgba(0, 0, 0, 0.3);
+}
+
 .app-container {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
-  background-color: #f3f4f6;
+  background-color: var(--bg-primary);
+  transition: background-color 0.3s ease;
 }
 
 .app-header {
-  background-color: #1f2937;
-  color: white;
+  background-color: var(--bg-header);
+  color: var(--text-header);
   padding: 24px;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 2px 4px var(--shadow);
+  position: relative;
+  transition: background-color 0.3s ease;
+}
+
+.dark-mode-toggle {
+  position: absolute;
+  left: 24px;
+  background: transparent;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  color: var(--text-header);
+  font-size: 20px;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s ease;
+  z-index: 10;
+}
+
+.dark-mode-toggle:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.4);
+  transform: rotate(20deg);
 }
 
 .app-header h1 {
   font-size: 24px;
   font-weight: 600;
   margin: 0;
+  margin-left: 60px; /* Make space for dark mode toggle */
 }
 
 .header-controls {
@@ -68,11 +120,12 @@
 }
 
 .app-footer {
-  background-color: #1f2937;
-  color: #9ca3af;
+  background-color: var(--bg-header);
+  color: var(--text-secondary);
   padding: 16px;
   text-align: center;
   font-size: 14px;
+  transition: background-color 0.3s ease;
 }
 
 /* Responsive design */
@@ -80,6 +133,14 @@
   .app-header {
     padding: 16px;
     gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  .dark-mode-toggle {
+    left: 16px;
+    width: 40px;
+    height: 40px;
+    font-size: 18px;
   }
 
   .app-main {
@@ -88,6 +149,7 @@
 
   .app-header h1 {
     font-size: 18px;
+    margin-left: 50px;
   }
 
   .header-controls {

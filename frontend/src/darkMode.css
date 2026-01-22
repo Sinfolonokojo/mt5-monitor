@@ -1,0 +1,211 @@
+/* Dark Mode Styles for Components */
+
+/* Tables and Cards */
+body.dark-mode table {
+  background-color: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+body.dark-mode thead {
+  background-color: #0f172a !important;
+  border-bottom-color: var(--border-color) !important;
+}
+
+body.dark-mode th {
+  color: var(--text-primary) !important;
+  border-color: var(--border-color) !important;
+}
+
+body.dark-mode th[style*="backgroundColor"] {
+  background-color: #374151 !important;
+}
+
+body.dark-mode tbody tr {
+  border-bottom-color: var(--border-color) !important;
+}
+
+body.dark-mode tbody tr:hover {
+  background-color: #374151 !important;
+}
+
+body.dark-mode td {
+  color: var(--text-primary) !important;
+  border-color: var(--border-color) !important;
+}
+
+/* Buttons */
+body.dark-mode button:not(.dark-mode-toggle) {
+  border-color: var(--border-color);
+}
+
+/* Inputs and search bars */
+body.dark-mode input[type="text"],
+body.dark-mode input[type="search"] {
+  background-color: var(--bg-secondary) !important;
+  color: var(--text-primary) !important;
+  border-color: var(--border-color) !important;
+}
+
+body.dark-mode input[type="text"]::placeholder,
+body.dark-mode input[type="search"]::placeholder {
+  color: var(--text-secondary);
+}
+
+body.dark-mode input[type="text"]:focus,
+body.dark-mode input[type="search"]:focus {
+  border-color: #3b82f6 !important;
+}
+
+/* Select dropdowns */
+body.dark-mode select {
+  background-color: var(--bg-secondary) !important;
+  color: var(--text-primary) !important;
+  border-color: var(--border-color) !important;
+}
+
+/* Modals */
+body.dark-mode [style*="backgroundColor: white"],
+body.dark-mode [style*="backgroundColor:#fff"],
+body.dark-mode [style*="backgroundColor: #fff"] {
+  background-color: var(--bg-secondary) !important;
+}
+
+body.dark-mode [style*="backgroundColor: rgba(0, 0, 0"] {
+  background-color: rgba(0, 0, 0, 0.85) !important;
+}
+
+/* Cards */
+body.dark-mode [style*="border: 1px solid #e5e7eb"],
+body.dark-mode [style*="border:1px solid #e5e7eb"] {
+  border-color: var(--border-color) !important;
+}
+
+body.dark-mode [style*="boxShadow"],
+body.dark-mode [style*="box-shadow"] {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4) !important;
+}
+
+/* Text colors */
+body.dark-mode [style*="color: #111827"],
+body.dark-mode [style*="color:#111827"] {
+  color: var(--text-primary) !important;
+}
+
+body.dark-mode [style*="color: #6b7280"],
+body.dark-mode [style*="color:#6b7280"] {
+  color: var(--text-secondary) !important;
+}
+
+/* Status colors - preserve in dark mode */
+body.dark-mode [style*="color: #22c55e"],
+body.dark-mode [style*="color:#22c55e"],
+body.dark-mode [style*="color: green"] {
+  color: #4ade80 !important; /* Brighter green for dark mode */
+}
+
+body.dark-mode [style*="color: #ef4444"],
+body.dark-mode [style*="color:#ef4444"],
+body.dark-mode [style*="color: red"] {
+  color: #f87171 !important; /* Brighter red for dark mode */
+}
+
+body.dark-mode [style*="color: #f59e0b"],
+body.dark-mode [style*="color:#f59e0b"],
+body.dark-mode [style*="color: orange"] {
+  color: #fbbf24 !important; /* Brighter orange for dark mode */
+}
+
+/* Background colors for status indicators */
+body.dark-mode [style*="backgroundColor: #dcfce7"] {
+  background-color: #14532d !important;
+}
+
+body.dark-mode [style*="backgroundColor: #fee2e2"] {
+  background-color: #7f1d1d !important;
+}
+
+body.dark-mode [style*="backgroundColor: #fef3c7"] {
+  background-color: #78350f !important;
+}
+
+/* Active/selected states */
+body.dark-mode [style*="backgroundColor: #e5e7eb"] {
+  background-color: #374151 !important;
+}
+
+body.dark-mode [style*="backgroundColor: #f3f4f6"] {
+  background-color: #1f2937 !important;
+}
+
+body.dark-mode [style*="backgroundColor: #f9fafb"] {
+  background-color: #0f172a !important;
+}
+
+/* Loading spinner */
+body.dark-mode .loading-spinner {
+  color: var(--text-primary);
+}
+
+/* Error message */
+body.dark-mode .error-message {
+  background-color: #7f1d1d !important;
+  color: #fecaca !important;
+  border-color: #991b1b !important;
+}
+
+/* Mobile cards */
+body.dark-mode .mobile-account-card {
+  background-color: var(--bg-secondary) !important;
+  border-color: var(--border-color) !important;
+}
+
+/* Sync message */
+body.dark-mode [style*="backgroundColor: #dcfce7"][style*="color: #166534"] {
+  background-color: #14532d !important;
+  color: #86efac !important;
+}
+
+body.dark-mode [style*="backgroundColor: #fee2e2"][style*="color: #991b1b"] {
+  background-color: #7f1d1d !important;
+  color: #fca5a5 !important;
+}
+
+/* Preserve button colors but adjust for dark mode */
+body.dark-mode button[style*="backgroundColor: #3b82f6"] {
+  background-color: #2563eb !important;
+}
+
+body.dark-mode button[style*="backgroundColor: #22c55e"] {
+  background-color: #16a34a !important;
+}
+
+/* Scrollbar styling for dark mode */
+body.dark-mode ::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+
+body.dark-mode ::-webkit-scrollbar-track {
+  background: var(--bg-secondary);
+}
+
+body.dark-mode ::-webkit-scrollbar-thumb {
+  background: #4b5563;
+  border-radius: 6px;
+}
+
+body.dark-mode ::-webkit-scrollbar-thumb:hover {
+  background: #6b7280;
+}
+
+/* Smooth transitions */
+body.dark-mode * {
+  transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+}
+
+/* Prevent transition on specific elements */
+body.dark-mode button,
+body.dark-mode input,
+body.dark-mode select {
+  transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+}
