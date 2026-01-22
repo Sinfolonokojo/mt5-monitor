@@ -5,7 +5,7 @@ import logging
 import asyncio
 from .config import settings
 from .mt5_service import MT5Service
-from .models import AccountResponse, AgentHealthResponse
+from .models import AccountResponse, AgentHealthResponse, TradeHistoryResponse
 from .utils import setup_logging
 from datetime import datetime
 
@@ -146,3 +146,34 @@ async def refresh_mt5():
     except Exception as e:
         logger.error(f"Error refreshing MT5: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/trade-history", response_model=TradeHistoryResponse)
+async def get_trade_history(days: int = 30):
+    """
+    Get detailed trade history for the last N days (closed trades only)
+
+    Args:
+        days: Number of days to look back (default 30, max 90)
+    """
+    try:
+        # Validate days parameter
+        if days < 1:
+            raise HTTPException(status_code=400, detail="Days parameter must be at least 1")
+        if days > 90:
+            raise HTTPException(status_code=400, detail="Days parameter cannot exceed 90")
+
+        logger.info(f"Fetching trade history for {settings.ACCOUNT_DISPLAY_NAME} (last {days} days)")
+        trade_history = mt5_service.get_trade_history(days)
+
+        if trade_history is None:
+            raise HTTPException(status_code=500, detail="Failed to fetch trade history")
+
+        logger.info(f"Successfully fetched {trade_history.total_trades} trades")
+        return trade_history
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching trade history: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch trade history: {str(e)}")

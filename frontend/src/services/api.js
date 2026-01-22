@@ -112,6 +112,42 @@ class ApiService {
       throw error;
     }
   }
+
+  async fetchTradeHistory(accountNumber, days = 30) {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/accounts/${accountNumber}/trade-history?days=${days}`);
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        const errorMessage = errorData.detail || `HTTP error! status: ${response.status}`;
+        throw new Error(errorMessage);
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.error('Error fetching trade history:', error);
+      throw error;
+    }
+  }
+
+  async syncTradesToGoogleSheets(accountNumber, days = 30) {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/accounts/${accountNumber}/sync-trades-to-sheets?days=${days}`, {
+        method: 'POST'
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        const errorMessage = errorData.detail || `HTTP error! status: ${response.status}`;
+        throw new Error(errorMessage);
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.error('Error syncing trades to Google Sheets:', error);
+      throw error;
+    }
+  }
 }
 
 export default new ApiService();

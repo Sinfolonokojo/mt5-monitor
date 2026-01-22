@@ -8,7 +8,7 @@ from .cache import cache
 from .phase_manager import phase_manager
 from .vs_manager import vs_manager
 from .google_sheets_service import google_sheets_service
-from .models import AggregatedResponse, VPSAgentStatus, AccountData, PhaseUpdateRequest, VSUpdateRequest
+from .models import AggregatedResponse, VPSAgentStatus, AccountData, PhaseUpdateRequest, VSUpdateRequest, TradeHistoryResponse
 from .utils import setup_logging
 from typing import List
 
@@ -201,6 +201,85 @@ async def force_refresh():
     """Clear cache and force data refresh"""
     cache.clear()
     return {"status": "success", "message": "Cache cleared, next request will fetch fresh data"}
+
+
+@app.get("/api/accounts/{account_number}/trade-history", response_model=TradeHistoryResponse)
+async def get_trade_history(account_number: int, days: int = 30):
+    """
+    Get detailed trade history for a specific account
+
+    Args:
+        account_number: The account number to fetch history for
+        days: Number of days to look back (default 30, max 90)
+    """
+    try:
+        # Validate days parameter
+        if days < 1:
+            raise HTTPException(status_code=400, detail="Days parameter must be at least 1")
+        if days > 90:
+            raise HTTPException(status_code=400, detail="Days parameter cannot exceed 90")
+
+        logger.info(f"Fetching trade history for account {account_number} (last {days} days)")
+
+        # Fetch trade history from the appropriate VPS agent
+        result = await data_aggregator.fetch_trade_history(account_number, days)
+
+        if not result.get("success"):
+            error_msg = result.get("error", "Unknown error")
+            logger.error(f"Failed to fetch trade history: {error_msg}")
+            raise HTTPException(status_code=404 if "not found" in error_msg.lower() else 500, detail=error_msg)
+
+        # Remove the success flag before returning
+        result.pop("success", None)
+
+        logger.info(f"Successfully fetched {result.get('total_trades', 0)} trades for account {account_number}")
+        return result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching trade history: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch trade history: {str(e)}")
+
+
+@app.post("/api/accounts/{account_number}/sync-trades-to-sheets")
+async def sync_trade_history_to_sheets(account_number: int, days: int = 30):
+    """
+    Sync trade history for a specific account to Google Sheets
+
+    Args:
+        account_number: The account number to sync trades for
+        days: Number of days to look back (default 30)
+    """
+    try:
+        logger.info(f"Starting Google Sheets sync for trade history of account {account_number}")
+
+        # Fetch trade history
+        trade_history = await data_aggregator.fetch_trade_history(account_number, days)
+
+        if not trade_history.get("success"):
+            error_msg = trade_history.get("error", "Unknown error")
+            logger.error(f"Failed to fetch trade history: {error_msg}")
+            raise HTTPException(status_code=404 if "not found" in error_msg.lower() else 500, detail=error_msg)
+
+        # Remove success flag
+        trade_history.pop("success", None)
+
+        # Sync to Google Sheets
+        result = google_sheets_service.sync_trade_history(trade_history)
+
+        if result.get("success"):
+            logger.info(f"Successfully synced {result.get('trades_synced', 0)} trades to Google Sheets")
+            return result
+        else:
+            logger.error(f"Google Sheets sync failed: {result.get('error')}")
+            raise HTTPException(status_code=500, detail=result.get('error', 'Unknown error'))
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error syncing trade history to Google Sheets: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 def build_response(accounts: List[AccountData]) -> AggregatedResponse:

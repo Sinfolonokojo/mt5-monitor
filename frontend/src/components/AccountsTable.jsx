@@ -5,11 +5,13 @@ import MobileAccountCard from './MobileAccountCard';
 import LoadingSpinner from './LoadingSpinner';
 import ErrorMessage from './ErrorMessage';
 import AccountDetailsModal from './AccountDetailsModal';
+import TradeHistoryModal from './TradeHistoryModal';
 import apiService from '../services/api';
 
 const AccountsTable = ({ data, loading, error, onRefresh, editMode, onPhaseUpdate, onVSUpdate }) => {
   const [sortMode, setSortMode] = useState('VS'); // 'VS', 'PL_DESC', 'PL_ASC', 'HOLDER'
   const [selectedAccount, setSelectedAccount] = useState(null);
+  const [tradeHistoryAccount, setTradeHistoryAccount] = useState(null);
   const [openTradeFilter, setOpenTradeFilter] = useState('all'); // 'all', 'with_open', 'without_open'
   const [isMobile, setIsMobile] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
@@ -616,6 +618,18 @@ const AccountsTable = ({ data, loading, error, onRefresh, editMode, onPhaseUpdat
           account={selectedAccount}
           vsGroup={mergedVSGroups[selectedAccount.account_number]}
           onClose={() => setSelectedAccount(null)}
+          onViewTrades={() => {
+            setTradeHistoryAccount(selectedAccount);
+            setSelectedAccount(null);
+          }}
+        />
+      )}
+
+      {/* Trade History Modal */}
+      {tradeHistoryAccount && (
+        <TradeHistoryModal
+          account={tradeHistoryAccount}
+          onClose={() => setTradeHistoryAccount(null)}
         />
       )}
     </div>

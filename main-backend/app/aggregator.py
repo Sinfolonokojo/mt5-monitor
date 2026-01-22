@@ -129,6 +129,59 @@ class DataAggregator:
         logger.info(f"Fetched total of {len(all_accounts)} accounts from all agents")
         return all_accounts, agent_statuses
 
+    async def fetch_trade_history(self, account_number: int, days: int = 30) -> Dict:
+        """
+        Fetch trade history for a specific account from the appropriate VPS agent
+
+        Args:
+            account_number: The account number to fetch history for
+            days: Number of days to look back (default 30)
+
+        Returns:
+            Dictionary with trade history or error
+        """
+        logger.info(f"Fetching trade history for account {account_number} (last {days} days)")
+
+        # First, get all accounts to find which agent has this account
+        all_accounts, _ = await self.fetch_all_agents()
+
+        # Find the agent that has this account
+        target_agent = None
+        for account in all_accounts:
+            if account.get("account_number") == account_number:
+                target_agent = account.get("vps_source")
+                break
+
+        if not target_agent:
+            logger.error(f"Account {account_number} not found in any VPS agent")
+            return {"error": f"Account {account_number} not found", "success": False}
+
+        # Find the agent URL
+        agent_config = next((a for a in self.vps_agents if a["name"] == target_agent), None)
+        if not agent_config:
+            logger.error(f"Agent config not found for {target_agent}")
+            return {"error": f"Agent {target_agent} not configured", "success": False}
+
+        # Fetch trade history from the agent
+        try:
+            async with httpx.AsyncClient(timeout=settings.AGENT_TIMEOUT) as client:
+                logger.info(f"Fetching trade history from {target_agent} at {agent_config['url']}")
+                response = await client.get(f"{agent_config['url']}/trade-history?days={days}")
+                response.raise_for_status()
+                trade_history = response.json()
+                logger.info(f"Successfully fetched {trade_history.get('total_trades', 0)} trades from {target_agent}")
+                return {**trade_history, "success": True}
+
+        except httpx.TimeoutException:
+            logger.error(f"Timeout fetching trade history from {target_agent}")
+            return {"error": "Request timeout", "success": False}
+        except httpx.ConnectError:
+            logger.error(f"Connection error to {target_agent}")
+            return {"error": "Agent offline", "success": False}
+        except Exception as e:
+            logger.error(f"Error fetching trade history from {target_agent}: {str(e)}")
+            return {"error": str(e), "success": False}
+
 
 # Singleton instance
 data_aggregator = DataAggregator()
