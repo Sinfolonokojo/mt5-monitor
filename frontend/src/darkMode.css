@@ -2,7 +2,7 @@
 
 /* Tables and Cards */
 body.dark-mode table {
-  background-color: var(--bg-secondary);
+  background-color: var(--bg-secondary) !important;
   color: var(--text-primary);
 }
 
@@ -21,6 +21,7 @@ body.dark-mode th[style*="backgroundColor"] {
 }
 
 body.dark-mode tbody tr {
+  background-color: var(--bg-secondary) !important;
   border-bottom-color: var(--border-color) !important;
 }
 
@@ -31,6 +32,7 @@ body.dark-mode tbody tr:hover {
 body.dark-mode td {
   color: var(--text-primary) !important;
   border-color: var(--border-color) !important;
+  background-color: transparent !important;
 }
 
 /* Buttons */
@@ -66,23 +68,73 @@ body.dark-mode select {
 /* Modals */
 body.dark-mode [style*="backgroundColor: white"],
 body.dark-mode [style*="backgroundColor:#fff"],
-body.dark-mode [style*="backgroundColor: #fff"] {
+body.dark-mode [style*="backgroundColor: #fff"],
+body.dark-mode [style*="backgroundColor:#ffffff"],
+body.dark-mode [style*="backgroundColor: #ffffff"] {
   background-color: var(--bg-secondary) !important;
 }
 
 body.dark-mode [style*="backgroundColor: rgba(0, 0, 0"] {
-  background-color: rgba(0, 0, 0, 0.85) !important;
+  background-color: rgba(0, 0, 0, 0.9) !important;
+}
+
+/* Modal specific elements */
+body.dark-mode [style*="position: fixed"] {
+  background-color: rgba(0, 0, 0, 0.9) !important;
+}
+
+/* Modal content boxes */
+body.dark-mode [style*="maxWidth"][style*="margin"][style*="padding"] {
+  background-color: var(--bg-secondary) !important;
+  color: var(--text-primary) !important;
+}
+
+/* Modal headers and titles */
+body.dark-mode h2,
+body.dark-mode h3,
+body.dark-mode h4 {
+  color: var(--text-primary) !important;
+}
+
+/* Modal text elements */
+body.dark-mode p,
+body.dark-mode span,
+body.dark-mode div {
+  color: inherit;
+}
+
+/* Modal close buttons */
+body.dark-mode button[style*="position: absolute"] {
+  color: var(--text-primary) !important;
+  background-color: transparent !important;
+}
+
+body.dark-mode button[style*="position: absolute"]:hover {
+  background-color: rgba(255, 255, 255, 0.1) !important;
 }
 
 /* Cards */
 body.dark-mode [style*="border: 1px solid #e5e7eb"],
-body.dark-mode [style*="border:1px solid #e5e7eb"] {
+body.dark-mode [style*="border:1px solid #e5e7eb"],
+body.dark-mode [style*="border: 2px solid #d1d5db"],
+body.dark-mode [style*="border:2px solid #d1d5db"] {
   border-color: var(--border-color) !important;
 }
 
 body.dark-mode [style*="boxShadow"],
 body.dark-mode [style*="box-shadow"] {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4) !important;
+}
+
+/* Ensure all divs with white backgrounds are dark */
+body.dark-mode div[style*="background"] {
+  background-color: var(--bg-secondary) !important;
+}
+
+body.dark-mode div[style*="backgroundColor: white"],
+body.dark-mode div[style*="backgroundColor:#ffffff"],
+body.dark-mode div[style*="backgroundColor: #ffffff"] {
+  background-color: var(--bg-secondary) !important;
 }
 
 /* Text colors */
@@ -198,6 +250,22 @@ body.dark-mode ::-webkit-scrollbar-thumb:hover {
   background: #6b7280;
 }
 
+/* Force dark backgrounds on all white elements */
+body.dark-mode [style*="white"] {
+  background-color: var(--bg-secondary) !important;
+}
+
+/* Table row alternating colors */
+body.dark-mode [style*="backgroundColor"][style*="#f9fafb"],
+body.dark-mode [style*="backgroundColor: #f9fafb"] {
+  background-color: #0f172a !important;
+}
+
+/* Ensure tr elements are dark */
+body.dark-mode tr[style*="backgroundColor"] {
+  background-color: var(--bg-secondary) !important;
+}
+
 /* Smooth transitions */
 body.dark-mode * {
   transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
@@ -208,4 +276,45 @@ body.dark-mode button,
 body.dark-mode input,
 body.dark-mode select {
   transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+}
+
+/* Override any remaining white backgrounds */
+body.dark-mode * {
+  scrollbar-color: #4b5563 var(--bg-secondary);
+}
+
+/* Aggressive overrides for inline styles - MUST BE LAST */
+body.dark-mode [style*="background-color: white"],
+body.dark-mode [style*="background-color:white"],
+body.dark-mode [style*="background-color: #fff"],
+body.dark-mode [style*="background-color:#fff"],
+body.dark-mode [style*="background-color: #ffffff"],
+body.dark-mode [style*="background-color:#ffffff"],
+body.dark-mode [style*="backgroundColor: 'white'"],
+body.dark-mode [style*='backgroundColor: "white"'] {
+  background-color: var(--bg-secondary) !important;
+}
+
+/* Force modal overlays to be dark */
+body.dark-mode > div[style*="position: fixed"] {
+  background-color: rgba(0, 0, 0, 0.9) !important;
+}
+
+/* Force modal content to be dark */
+body.dark-mode > div[style*="position: fixed"] > div {
+  background-color: var(--bg-secondary) !important;
+  color: var(--text-primary) !important;
+}
+
+/* Tables inside modals */
+body.dark-mode table tbody tr {
+  background-color: var(--bg-secondary) !important;
+}
+
+body.dark-mode table tbody tr:nth-child(even) {
+  background-color: #0f172a !important;
+}
+
+body.dark-mode table tbody tr:hover {
+  background-color: #374151 !important;
 }
