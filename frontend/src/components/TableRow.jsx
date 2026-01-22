@@ -15,9 +15,8 @@ const TableRow = ({ account, editMode, onPhaseUpdate, onVSUpdate, vsGroup, onRow
 
   // Check for dark mode
   const isDarkMode = document.body.classList.contains('dark-mode');
-  const greenColor = isDarkMode ? '#4ade80' : '#22c55e';
-  const redColor = isDarkMode ? '#f87171' : '#ef4444';
-  const darkGreenBorder = isDarkMode ? '#22c55e' : '#16a34a';
+  const greenColor = '#22c55e';
+  const redColor = '#ef4444';
 
   const plColor = profitLoss >= 0 ? greenColor : redColor;
   const maxLossColor = maxLoss >= 0 ? greenColor : redColor;
@@ -126,8 +125,8 @@ const TableRow = ({ account, editMode, onPhaseUpdate, onVSUpdate, vsGroup, onRow
             borderRadius: '50%',
             backgroundColor: account.has_open_position ? greenColor : '#e5e7eb',
             margin: '0 auto',
-            border: account.has_open_position ? `2px solid ${darkGreenBorder}` : '2px solid #9ca3af',
-            boxShadow: isDarkMode && account.has_open_position ? `0 0 6px ${greenColor}` : 'none'
+            border: account.has_open_position ? '2px solid #16a34a' : '2px solid #9ca3af',
+            boxShadow: isDarkMode && account.has_open_position ? `0 0 8px ${greenColor}` : 'none'
           }}
           title={account.has_open_position ? 'Has open position' : 'No open position'}
         />

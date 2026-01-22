@@ -15,8 +15,8 @@ const MobileAccountCard = ({ account, editMode, onPhaseUpdate, onVSUpdate, vsGro
 
   // Check for dark mode
   const isDarkMode = document.body.classList.contains('dark-mode');
-  const greenColor = isDarkMode ? '#4ade80' : '#22c55e';
-  const redColor = isDarkMode ? '#f87171' : '#ef4444';
+  const greenColor = '#22c55e';
+  const redColor = '#ef4444';
 
   const plColor = profitLoss >= 0 ? greenColor : redColor;
   const maxLossColor = maxLoss >= 0 ? greenColor : redColor;
@@ -68,7 +68,7 @@ const MobileAccountCard = ({ account, editMode, onPhaseUpdate, onVSUpdate, vsGro
               height: '12px',
               borderRadius: '50%',
               backgroundColor: account.status === 'connected' ? greenColor : redColor,
-              boxShadow: isDarkMode ? `0 0 6px ${account.status === 'connected' ? greenColor : redColor}` : 'none'
+              boxShadow: isDarkMode ? `0 0 8px ${account.status === 'connected' ? greenColor : redColor}` : 'none'
             }}
             title={account.status === 'connected' ? 'Conectado' : 'Desconectado'}
           />

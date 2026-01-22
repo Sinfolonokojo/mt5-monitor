@@ -207,16 +207,14 @@ body.dark-mode div[style*="borderRadius: 50%"][style*="width: 10px"] {
   box-shadow: 0 0 4px currentColor;
 }
 
-/* Status indicator dots - ULTRA SPECIFIC SELECTORS */
-body.dark-mode div[style*="borderRadius"][style*="backgroundColor"],
-body.dark-mode div[style*="border-radius"][style*="background-color"] {
-  filter: brightness(1.3) saturate(1.2);
-}
-
+/* Status indicator dots - Keep original colors, just add glow */
 body.dark-mode div[style*="width: 10px"][style*="height: 10px"][style*="borderRadius: 50%"],
-body.dark-mode div[style*="width:10px"][style*="height:10px"][style*="borderRadius:50%"] {
-  filter: brightness(1.5) saturate(1.3) !important;
-  box-shadow: 0 0 6px currentColor !important;
+body.dark-mode div[style*="width:10px"][style*="height:10px"][style*="borderRadius:50%"],
+body.dark-mode div[style*="width: 12px"][style*="height: 12px"][style*="borderRadius: 50%"],
+body.dark-mode div[style*="width:12px"][style*="height:12px"][style*="borderRadius:50%"],
+body.dark-mode div[style*="width: 16px"][style*="height: 16px"][style*="borderRadius: 50%"],
+body.dark-mode div[style*="width:16px"][style*="height:16px"][style*="borderRadius:50%"] {
+  /* Don't change colors, they're handled in components */
 }
 
 /* Background colors for status indicators and info boxes */
