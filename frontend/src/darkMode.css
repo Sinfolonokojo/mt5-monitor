@@ -137,18 +137,42 @@ body.dark-mode div[style*="backgroundColor: #ffffff"] {
   background-color: var(--bg-secondary) !important;
 }
 
-/* Text colors */
+/* Text colors - Force light colors on dark backgrounds */
 body.dark-mode [style*="color: #111827"],
-body.dark-mode [style*="color:#111827"] {
-  color: var(--text-primary) !important;
+body.dark-mode [style*="color:#111827"],
+body.dark-mode [style*="color: '#111827'"],
+body.dark-mode [style*='color: "#111827"'] {
+  color: #f9fafb !important;
 }
 
 body.dark-mode [style*="color: #6b7280"],
-body.dark-mode [style*="color:#6b7280"] {
-  color: var(--text-secondary) !important;
+body.dark-mode [style*="color:#6b7280"],
+body.dark-mode [style*="color: '#6b7280'"],
+body.dark-mode [style*='color: "#6b7280"'] {
+  color: #d1d5db !important;
 }
 
-/* Status colors - preserve in dark mode */
+body.dark-mode [style*="color: #374151"],
+body.dark-mode [style*="color:#374151"],
+body.dark-mode [style*="color: '#374151'"],
+body.dark-mode [style*='color: "#374151"'] {
+  color: #e5e7eb !important;
+}
+
+/* Ensure all table headers are visible */
+body.dark-mode th {
+  color: #f9fafb !important;
+}
+
+/* Ensure all text elements are readable */
+body.dark-mode span,
+body.dark-mode div,
+body.dark-mode p,
+body.dark-mode td {
+  color: inherit;
+}
+
+/* Status colors - preserve and enhance in dark mode */
 body.dark-mode [style*="color: #22c55e"],
 body.dark-mode [style*="color:#22c55e"],
 body.dark-mode [style*="color: green"] {
@@ -167,17 +191,76 @@ body.dark-mode [style*="color: orange"] {
   color: #fbbf24 !important; /* Brighter orange for dark mode */
 }
 
-/* Background colors for status indicators */
-body.dark-mode [style*="backgroundColor: #dcfce7"] {
+/* Status indicator dots - preserve bright colors */
+body.dark-mode div[style*="borderRadius: 50%"][style*="width: 10px"] {
+  /* Don't override background color for status dots - they need to stay bright */
+  box-shadow: 0 0 4px currentColor;
+}
+
+body.dark-mode div[style*="borderRadius"][style*="backgroundColor: #22c55e"],
+body.dark-mode div[style*="borderRadius"][style*="backgroundColor:#22c55e"] {
+  background-color: #4ade80 !important; /* Brighter green for visibility */
+}
+
+body.dark-mode div[style*="borderRadius"][style*="backgroundColor: #ef4444"],
+body.dark-mode div[style*="borderRadius"][style*="backgroundColor:#ef4444"] {
+  background-color: #f87171 !important; /* Brighter red for visibility */
+}
+
+body.dark-mode div[style*="borderRadius"][style*="backgroundColor: #f59e0b"],
+body.dark-mode div[style*="borderRadius"][style*="backgroundColor:#f59e0b"] {
+  background-color: #fbbf24 !important; /* Brighter orange for visibility */
+}
+
+/* Background colors for status indicators and info boxes */
+body.dark-mode [style*="backgroundColor: #dcfce7"],
+body.dark-mode [style*="backgroundColor:#dcfce7"] {
   background-color: #14532d !important;
 }
 
-body.dark-mode [style*="backgroundColor: #fee2e2"] {
+body.dark-mode [style*="backgroundColor: #fee2e2"],
+body.dark-mode [style*="backgroundColor:#fee2e2"] {
   background-color: #7f1d1d !important;
 }
 
-body.dark-mode [style*="backgroundColor: #fef3c7"] {
+body.dark-mode [style*="backgroundColor: #fef3c7"],
+body.dark-mode [style*="backgroundColor:#fef3c7"] {
   background-color: #78350f !important;
+}
+
+/* Statistics boxes in modals */
+body.dark-mode [style*="backgroundColor: #f9fafb"][style*="padding: 16px"],
+body.dark-mode [style*="backgroundColor:#f9fafb"][style*="padding: 16px"] {
+  background-color: #1f2937 !important;
+}
+
+/* Ensure all div text is readable */
+body.dark-mode div[style*="fontSize"] {
+  color: inherit;
+}
+
+/* Force bright text on all modal content */
+body.dark-mode div[style*="padding"][style*="backgroundColor"] div {
+  color: #f9fafb !important;
+}
+
+/* Override any remaining dark colors that make text unreadable */
+body.dark-mode [style*="color: #1f2937"],
+body.dark-mode [style*="color:#1f2937"],
+body.dark-mode [style*="color: #0f172a"],
+body.dark-mode [style*="color:#0f172a"] {
+  color: #f9fafb !important;
+}
+
+/* Preserve profit/loss colors but make them brighter */
+body.dark-mode [style*="color: #dc2626"],
+body.dark-mode [style*="color:#dc2626"] {
+  color: #f87171 !important;
+}
+
+/* Side badges (BUY/SELL) - keep them visible */
+body.dark-mode span[style*="padding: 4px 8px"] {
+  border: 1px solid currentColor;
 }
 
 /* Active/selected states */
@@ -317,4 +400,13 @@ body.dark-mode table tbody tr:nth-child(even) {
 
 body.dark-mode table tbody tr:hover {
   background-color: #374151 !important;
+}
+
+/* Ensure table content text is visible */
+body.dark-mode table tbody td {
+  color: #f9fafb !important;
+}
+
+body.dark-mode table thead th {
+  color: #f9fafb !important;
 }
