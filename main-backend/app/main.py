@@ -7,7 +7,10 @@ from .aggregator import data_aggregator
 from .cache import cache
 from .phase_manager import phase_manager
 from .vs_manager import vs_manager
-from .models import AggregatedResponse, VPSAgentStatus, AccountData, PhaseUpdateRequest, VSUpdateRequest
+from .google_sheets_service import google_sheets_service
+from .trade_cache_manager import trade_cache_manager
+from .account_vps_cache import account_vps_cache
+from .models import AggregatedResponse, VPSAgentStatus, AccountData, PhaseUpdateRequest, VSUpdateRequest, TradeHistoryResponse
 from .utils import setup_logging
 from typing import List
 
@@ -56,6 +59,9 @@ async def get_all_accounts(force_refresh: bool = False):
         # Fetch fresh data from all agents
         logger.info("Fetching data from all VPS agents")
         raw_accounts, agent_statuses = await data_aggregator.fetch_all_agents()
+
+        # Update account-VPS mapping cache
+        account_vps_cache.update_bulk(raw_accounts)
 
         # Enrich with phase data and create AccountData objects
         accounts = []
@@ -149,11 +155,159 @@ async def update_account_vs(account_number: int, request: VSUpdateRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post("/api/sync-to-sheets")
+async def sync_to_google_sheets():
+    """Sync current account data to Google Sheets"""
+    try:
+        logger.info("Starting Google Sheets sync")
+
+        # Get current account data
+        cached_data = cache.get()
+        if cached_data:
+            # Cache stores a tuple (accounts, agent_statuses)
+            accounts, agent_statuses = cached_data
+            logger.info("Using cached data for Google Sheets sync")
+            # Cached accounts are AccountData objects, convert to dict
+            accounts_list = [account.dict() for account in accounts]
+        else:
+            logger.info("Fetching fresh data for Google Sheets sync")
+            # fetch_all_agents returns (raw_accounts as dicts, agent_statuses) tuple
+            raw_accounts, agent_statuses = await data_aggregator.fetch_all_agents()
+            # raw_accounts are already dictionaries
+            accounts_list = raw_accounts
+
+        # Construct the data dict that google_sheets_service expects
+        data = {
+            "accounts": accounts_list,
+            "total_accounts": len(accounts_list),
+            "agent_statuses": agent_statuses,
+            "last_refresh": datetime.now().isoformat()
+        }
+
+        # Sync to Google Sheets
+        result = google_sheets_service.sync_accounts(data)
+
+        if result.get("success"):
+            logger.info(f"Successfully synced {result.get('accounts_synced', 0)} accounts to Google Sheets")
+            return result
+        else:
+            logger.error(f"Google Sheets sync failed: {result.get('error')}")
+            raise HTTPException(status_code=500, detail=result.get('error', 'Unknown error'))
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error syncing to Google Sheets: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/api/refresh")
 async def force_refresh():
     """Clear cache and force data refresh"""
     cache.clear()
+    account_vps_cache.clear()
     return {"status": "success", "message": "Cache cleared, next request will fetch fresh data"}
+
+
+@app.get("/api/accounts/{account_number}/trade-history", response_model=TradeHistoryResponse)
+async def get_trade_history(account_number: int, force_refresh: bool = False):
+    """
+    Get detailed trade history for a specific account with incremental caching
+
+    Args:
+        account_number: The account number to fetch history for
+        force_refresh: If True, clear cache and fetch all trades from scratch
+    """
+    try:
+        logger.info(f"Fetching trade history for account {account_number} (force_refresh={force_refresh})")
+
+        # If force refresh, clear the cache for this account
+        if force_refresh:
+            trade_cache_manager.clear_account_cache(account_number)
+            logger.info(f"Cache cleared for account {account_number}")
+
+        # Get last sync time from cache
+        last_sync_time = trade_cache_manager.get_last_sync_time(account_number)
+
+        # Determine fetch strategy
+        if last_sync_time:
+            # Incremental fetch: only get trades since last sync
+            logger.info(f"Incremental fetch: getting trades since {last_sync_time}")
+            result = await data_aggregator.fetch_trade_history(account_number, from_date=last_sync_time)
+        else:
+            # First fetch: get last 30 days of trades
+            logger.info(f"Initial fetch: getting last 30 days of trades")
+            result = await data_aggregator.fetch_trade_history(account_number, days=30)
+
+        if not result.get("success"):
+            error_msg = result.get("error", "Unknown error")
+            logger.error(f"Failed to fetch trade history: {error_msg}")
+            raise HTTPException(status_code=404 if "not found" in error_msg.lower() else 500, detail=error_msg)
+
+        # Remove the success flag
+        result.pop("success", None)
+
+        # Convert trade dictionaries for caching (ensure serializable)
+        new_trades = result.get('trades', [])
+
+        # Update cache with new trades (incremental merge)
+        cached_result = trade_cache_manager.update_trades(account_number, new_trades)
+
+        logger.info(f"Trade history updated: {cached_result['new_trades_count']} new, "
+                   f"{cached_result['total_trades']} total trades for account {account_number}")
+
+        # Return merged result from cache
+        return TradeHistoryResponse(
+            account_number=cached_result['account_number'],
+            trades=cached_result['trades'],
+            total_trades=cached_result['total_trades'],
+            total_profit=cached_result['total_profit'],
+            total_commission=cached_result['total_commission']
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching trade history: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch trade history: {str(e)}")
+
+
+@app.post("/api/accounts/{account_number}/sync-trades-to-sheets")
+async def sync_trade_history_to_sheets(account_number: int):
+    """
+    Sync trade history for a specific account to Google Sheets (uses cached trades)
+
+    Args:
+        account_number: The account number to sync trades for
+    """
+    try:
+        logger.info(f"Starting Google Sheets sync for trade history of account {account_number}")
+
+        # Get cached trade summary
+        trade_history = trade_cache_manager.get_trade_summary(account_number)
+
+        if not trade_history.get('cached') or trade_history.get('total_trades', 0) == 0:
+            # No cached trades, fetch first
+            logger.info(f"No cached trades found, fetching first...")
+            await get_trade_history(account_number, force_refresh=False)
+            # Get updated cache
+            trade_history = trade_cache_manager.get_trade_summary(account_number)
+
+        # Sync to Google Sheets
+        result = google_sheets_service.sync_trade_history(trade_history)
+
+        if result.get("success"):
+            logger.info(f"Successfully synced {result.get('trades_synced', 0)} trades to Google Sheets")
+            return result
+        else:
+            logger.error(f"Google Sheets sync failed: {result.get('error')}")
+            raise HTTPException(status_code=500, detail=result.get('error', 'Unknown error'))
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error syncing trade history to Google Sheets: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 def build_response(accounts: List[AccountData]) -> AggregatedResponse:

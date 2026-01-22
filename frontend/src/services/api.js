@@ -93,6 +93,62 @@ class ApiService {
       throw error;
     }
   }
+
+  async syncToGoogleSheets() {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/sync-to-sheets`, {
+        method: 'POST'
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        const errorMessage = errorData.detail || `HTTP error! status: ${response.status}`;
+        throw new Error(errorMessage);
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.error('Error syncing to Google Sheets:', error);
+      throw error;
+    }
+  }
+
+  async fetchTradeHistory(accountNumber, forceRefresh = false) {
+    try {
+      const url = `${API_BASE_URL}/api/accounts/${accountNumber}/trade-history${forceRefresh ? '?force_refresh=true' : ''}`;
+      const response = await fetch(url);
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        const errorMessage = errorData.detail || `HTTP error! status: ${response.status}`;
+        throw new Error(errorMessage);
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.error('Error fetching trade history:', error);
+      throw error;
+    }
+  }
+
+  async syncTradesToGoogleSheets(accountNumber) {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/accounts/${accountNumber}/sync-trades-to-sheets`, {
+        method: 'POST'
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        const errorMessage = errorData.detail || `HTTP error! status: ${response.status}`;
+        throw new Error(errorMessage);
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.error('Error syncing trades to Google Sheets:', error);
+      throw error;
+    }
+  }
 }
 
 export default new ApiService();

@@ -61,6 +61,8 @@ coverage/
 # Temporary files
 tmpclaude-*
 nul
+test.py
+iDEAS.txt
 
 # Claude Code
 .claude/

@@ -5,12 +5,18 @@ import MobileAccountCard from './MobileAccountCard';
 import LoadingSpinner from './LoadingSpinner';
 import ErrorMessage from './ErrorMessage';
 import AccountDetailsModal from './AccountDetailsModal';
+import TradeHistoryModal from './TradeHistoryModal';
+import apiService from '../services/api';
 
 const AccountsTable = ({ data, loading, error, onRefresh, editMode, onPhaseUpdate, onVSUpdate }) => {
-  const [sortMode, setSortMode] = useState('VS'); // 'VS', 'PL_DESC', 'PL_ASC'
+  const [sortMode, setSortMode] = useState('VS'); // 'VS', 'PL_DESC', 'PL_ASC', 'HOLDER_ASC', 'HOLDER_DESC'
   const [selectedAccount, setSelectedAccount] = useState(null);
+  const [tradeHistoryAccount, setTradeHistoryAccount] = useState(null);
   const [openTradeFilter, setOpenTradeFilter] = useState('all'); // 'all', 'with_open', 'without_open'
   const [isMobile, setIsMobile] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncMessage, setSyncMessage] = useState(null);
+  const [searchQuery, setSearchQuery] = useState('');
 
   // Detect screen size for responsive layout
   useEffect(() => {
@@ -62,12 +68,23 @@ const AccountsTable = ({ data, loading, error, onRefresh, editMode, onPhaseUpdat
       }
     }
 
-    // Filter by open trade status
+    // Filter by search query (prop firm or account holder name)
     let filteredAccounts = uniqueAccounts;
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase().trim();
+      filteredAccounts = filteredAccounts.filter(account => {
+        const propFirm = (account.prop_firm || '').toLowerCase();
+        const holder = (account.account_holder || '').toLowerCase();
+        const accountNumber = (account.account_number || '').toString().toLowerCase();
+        return propFirm.includes(query) || holder.includes(query) || accountNumber.includes(query);
+      });
+    }
+
+    // Filter by open trade status
     if (openTradeFilter === 'with_open') {
-      filteredAccounts = uniqueAccounts.filter(account => account.has_open_position);
+      filteredAccounts = filteredAccounts.filter(account => account.has_open_position);
     } else if (openTradeFilter === 'without_open') {
-      filteredAccounts = uniqueAccounts.filter(account => !account.has_open_position);
+      filteredAccounts = filteredAccounts.filter(account => !account.has_open_position);
     }
 
     // Sort the filtered accounts
@@ -81,6 +98,16 @@ const AccountsTable = ({ data, loading, error, onRefresh, editMode, onPhaseUpdat
       } else if (sortMode === 'PL_ASC') {
         // Sort by P/L ascending (lowest profit/highest loss first)
         return aPL - bPL;
+      } else if (sortMode === 'HOLDER_ASC') {
+        // Sort by account holder alphabetically A-Z
+        const aHolder = (a.account_holder || '').toLowerCase();
+        const bHolder = (b.account_holder || '').toLowerCase();
+        return aHolder.localeCompare(bHolder);
+      } else if (sortMode === 'HOLDER_DESC') {
+        // Sort by account holder alphabetically Z-A
+        const aHolder = (a.account_holder || '').toLowerCase();
+        const bHolder = (b.account_holder || '').toLowerCase();
+        return bHolder.localeCompare(aHolder);
       } else {
         // VS mode - sort by VS grouping (use merged VS groups)
         const aGroup = mergedVSGroups[a.account_number];
@@ -110,7 +137,7 @@ const AccountsTable = ({ data, loading, error, onRefresh, editMode, onPhaseUpdat
         return bPL - aPL;
       }
     });
-  }, [data?.accounts, sortMode, mergedVSGroups, openTradeFilter]);
+  }, [data?.accounts, sortMode, mergedVSGroups, openTradeFilter, searchQuery]);
 
   // Early returns after all hooks
   if (loading) {
@@ -139,7 +166,12 @@ const AccountsTable = ({ data, loading, error, onRefresh, editMode, onPhaseUpdat
   };
 
   const handleVSHeaderClick = () => {
-    setSortMode('VS');
+    // Toggle VS filter on/off
+    if (sortMode === 'VS') {
+      setSortMode('PL_DESC'); // Disable VS filter, default to P/L descending
+    } else {
+      setSortMode('VS'); // Enable VS filter
+    }
   };
 
   const handleOpenTradeHeaderClick = () => {
@@ -153,8 +185,49 @@ const AccountsTable = ({ data, loading, error, onRefresh, editMode, onPhaseUpdat
     }
   };
 
+  const handleHolderHeaderClick = () => {
+    // Cycle through: HOLDER_ASC -> HOLDER_DESC -> PL_DESC (remove filter)
+    if (sortMode === 'HOLDER_ASC') {
+      setSortMode('HOLDER_DESC');
+    } else if (sortMode === 'HOLDER_DESC') {
+      setSortMode('PL_DESC'); // Back to default
+    } else {
+      setSortMode('HOLDER_ASC');
+    }
+  };
+
   const handleExportToExcel = () => {
     exportToExcel(sortedAccounts);
+  };
+
+  const handleSyncToGoogleSheets = async () => {
+    setIsSyncing(true);
+    setSyncMessage(null);
+
+    try {
+      const result = await apiService.syncToGoogleSheets();
+
+      if (result.success) {
+        setSyncMessage({
+          type: 'success',
+          text: `✓ ${result.message}`,
+          url: result.spreadsheet_url
+        });
+
+        // Clear message after 5 seconds
+        setTimeout(() => setSyncMessage(null), 5000);
+      }
+    } catch (err) {
+      setSyncMessage({
+        type: 'error',
+        text: `✗ Error: ${err.message}`
+      });
+
+      // Clear error after 5 seconds
+      setTimeout(() => setSyncMessage(null), 5000);
+    } finally {
+      setIsSyncing(false);
+    }
   };
 
   // Calculate accounts by phase
@@ -195,31 +268,166 @@ const AccountsTable = ({ data, loading, error, onRefresh, editMode, onPhaseUpdat
         />
       </div>
 
-      {/* Export Button */}
-      <div style={{ marginBottom: '16px', display: 'flex', justifyContent: 'flex-end' }}>
-        <button
-          onClick={handleExportToExcel}
-          style={{
-            padding: '10px 20px',
-            backgroundColor: '#22c55e',
-            color: 'white',
-            border: 'none',
+      {/* Search Bar */}
+      <div style={{ marginBottom: '20px' }}>
+        <div style={{ position: 'relative', maxWidth: '100%' }}>
+          <span
+            style={{
+              position: 'absolute',
+              left: '16px',
+              top: '50%',
+              transform: 'translateY(-50%)',
+              fontSize: '18px',
+              pointerEvents: 'none',
+              zIndex: 1,
+            }}
+          >
+            🔍
+          </span>
+          <input
+            type="text"
+            placeholder="Buscar por firma, titular o número de cuenta..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            style={{
+              width: '100%',
+              padding: '12px 45px 12px 45px',
+              fontSize: '15px',
+              fontWeight: '400',
+              color: '#111827',
+              border: '2px solid #d1d5db',
+              borderRadius: '10px',
+              outline: 'none',
+              transition: 'border-color 0.2s',
+              backgroundColor: 'white',
+              boxSizing: 'border-box',
+              WebkitAppearance: 'none',
+              appearance: 'none',
+              colorScheme: 'light',
+            }}
+            onFocus={(e) => e.target.style.borderColor = '#3b82f6'}
+            onBlur={(e) => e.target.style.borderColor = '#d1d5db'}
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery('')}
+              style={{
+                position: 'absolute',
+                right: '12px',
+                top: '50%',
+                transform: 'translateY(-50%)',
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                color: '#6b7280',
+                fontSize: '20px',
+                padding: '4px 8px',
+                borderRadius: '4px',
+                transition: 'background-color 0.2s',
+                zIndex: 1,
+              }}
+              onMouseEnter={(e) => e.target.style.backgroundColor = '#f3f4f6'}
+              onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
+              title="Limpiar búsqueda"
+            >
+              ✕
+            </button>
+          )}
+        </div>
+        {searchQuery && (
+          <div style={{
+            marginTop: '8px',
+            fontSize: '14px',
+            color: '#6b7280',
+          }}>
+            {sortedAccounts.length} cuenta{sortedAccounts.length !== 1 ? 's' : ''} encontrada{sortedAccounts.length !== 1 ? 's' : ''}
+          </div>
+        )}
+      </div>
+
+      {/* Export & Sync Buttons */}
+      <div style={{ marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+        {/* Sync Message */}
+        {syncMessage && (
+          <div style={{
+            padding: '10px 16px',
+            backgroundColor: syncMessage.type === 'success' ? '#dcfce7' : '#fee2e2',
+            color: syncMessage.type === 'success' ? '#166534' : '#991b1b',
             borderRadius: '6px',
             fontSize: '14px',
-            fontWeight: '600',
-            cursor: 'pointer',
+            fontWeight: '500',
             display: 'flex',
             alignItems: 'center',
             gap: '8px',
-            boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
-            transition: 'background-color 0.2s'
-          }}
-          onMouseEnter={(e) => e.target.style.backgroundColor = '#16a34a'}
-          onMouseLeave={(e) => e.target.style.backgroundColor = '#22c55e'}
-        >
-          <span>📊</span>
-          Export to Excel
-        </button>
+          }}>
+            {syncMessage.text}
+            {syncMessage.url && (
+              <a
+                href={syncMessage.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  color: '#166534',
+                  textDecoration: 'underline',
+                  fontWeight: '600'
+                }}
+              >
+                Ver Hoja →
+              </a>
+            )}
+          </div>
+        )}
+
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: '12px' }}>
+          <button
+            onClick={handleSyncToGoogleSheets}
+            disabled={isSyncing}
+            style={{
+              padding: '10px 20px',
+              backgroundColor: isSyncing ? '#9ca3af' : '#3b82f6',
+              color: 'white',
+              border: 'none',
+              borderRadius: '6px',
+              fontSize: '14px',
+              fontWeight: '600',
+              cursor: isSyncing ? 'not-allowed' : 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+              transition: 'background-color 0.2s'
+            }}
+            onMouseEnter={(e) => !isSyncing && (e.target.style.backgroundColor = '#2563eb')}
+            onMouseLeave={(e) => !isSyncing && (e.target.style.backgroundColor = '#3b82f6')}
+          >
+            <span>{isSyncing ? '⏳' : '📤'}</span>
+            {isSyncing ? 'Sincronizando...' : 'Sync to Google Sheets'}
+          </button>
+
+          <button
+            onClick={handleExportToExcel}
+            style={{
+              padding: '10px 20px',
+              backgroundColor: '#22c55e',
+              color: 'white',
+              border: 'none',
+              borderRadius: '6px',
+              fontSize: '14px',
+              fontWeight: '600',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+              transition: 'background-color 0.2s'
+            }}
+            onMouseEnter={(e) => e.target.style.backgroundColor = '#16a34a'}
+            onMouseLeave={(e) => e.target.style.backgroundColor = '#22c55e'}
+          >
+            <span>📊</span>
+            Export to Excel
+          </button>
+        </div>
       </div>
 
       {/* Mobile Cards View */}
@@ -244,6 +452,8 @@ const AccountsTable = ({ data, loading, error, onRefresh, editMode, onPhaseUpdat
               <option value="VS">Ordenar: VS Grupos</option>
               <option value="PL_DESC">Ordenar: Mayor P/L</option>
               <option value="PL_ASC">Ordenar: Menor P/L</option>
+              <option value="HOLDER_ASC">Ordenar: Titular A-Z</option>
+              <option value="HOLDER_DESC">Ordenar: Titular Z-A</option>
             </select>
             <select
               value={openTradeFilter}
@@ -309,9 +519,18 @@ const AccountsTable = ({ data, loading, error, onRefresh, editMode, onPhaseUpdat
                   Días op
                 </th>
                 <th
-                  style={{ padding: '12px 16px', textAlign: 'left', fontWeight: '600' }}
+                  onClick={handleHolderHeaderClick}
+                  style={{
+                    padding: '12px 16px',
+                    textAlign: 'left',
+                    fontWeight: '600',
+                    cursor: 'pointer',
+                    userSelect: 'none',
+                    backgroundColor: sortMode.startsWith('HOLDER_') ? '#e5e7eb' : 'transparent',
+                    transition: 'background-color 0.2s'
+                  }}
                 >
-                  Holder
+                  Holder {sortMode === 'HOLDER_ASC' ? '↓' : sortMode === 'HOLDER_DESC' ? '↑' : ''}
                 </th>
                 <th
                   style={{ padding: '12px 16px', textAlign: 'center', fontWeight: '600' }}
@@ -412,6 +631,18 @@ const AccountsTable = ({ data, loading, error, onRefresh, editMode, onPhaseUpdat
           account={selectedAccount}
           vsGroup={mergedVSGroups[selectedAccount.account_number]}
           onClose={() => setSelectedAccount(null)}
+          onViewTrades={() => {
+            setTradeHistoryAccount(selectedAccount);
+            setSelectedAccount(null);
+          }}
+        />
+      )}
+
+      {/* Trade History Modal */}
+      {tradeHistoryAccount && (
+        <TradeHistoryModal
+          account={tradeHistoryAccount}
+          onClose={() => setTradeHistoryAccount(null)}
         />
       )}
     </div>

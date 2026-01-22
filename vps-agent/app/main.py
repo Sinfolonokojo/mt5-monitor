@@ -5,7 +5,7 @@ import logging
 import asyncio
 from .config import settings
 from .mt5_service import MT5Service
-from .models import AccountResponse, AgentHealthResponse
+from .models import AccountResponse, AgentHealthResponse, TradeHistoryResponse
 from .utils import setup_logging
 from datetime import datetime
 
@@ -146,3 +146,47 @@ async def refresh_mt5():
     except Exception as e:
         logger.error(f"Error refreshing MT5: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/trade-history", response_model=TradeHistoryResponse)
+async def get_trade_history(from_date: str = None, days: int = None):
+    """
+    Get detailed trade history (closed trades only)
+
+    Args:
+        from_date: ISO format date string to fetch trades from (optional, for incremental fetching)
+        days: Number of days to look back (optional, default 90 if from_date not provided)
+    """
+    try:
+        from datetime import datetime
+
+        # Parse from_date if provided
+        parsed_from_date = None
+        if from_date:
+            try:
+                parsed_from_date = datetime.fromisoformat(from_date.replace('Z', '+00:00'))
+                logger.info(f"Fetching trade history from {from_date}")
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid from_date format. Use ISO format (YYYY-MM-DDTHH:MM:SS)")
+
+        # Validate days parameter if provided
+        if days is not None:
+            if days < 1:
+                raise HTTPException(status_code=400, detail="Days parameter must be at least 1")
+            if days > 365:
+                raise HTTPException(status_code=400, detail="Days parameter cannot exceed 365")
+
+        logger.info(f"Fetching trade history for {settings.ACCOUNT_DISPLAY_NAME}")
+        trade_history = mt5_service.get_trade_history(from_date=parsed_from_date, days=days)
+
+        if trade_history is None:
+            raise HTTPException(status_code=500, detail="Failed to fetch trade history")
+
+        logger.info(f"Successfully fetched {trade_history.total_trades} trades")
+        return trade_history
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching trade history: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch trade history: {str(e)}")

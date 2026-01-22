@@ -41,3 +41,29 @@ class AgentHealthResponse(BaseModel):
     accounts_monitored: int
     mt5_initialized: bool
     timestamp: datetime
+
+
+class TradeHistory(BaseModel):
+    """Individual trade history record"""
+    symbol: str
+    side: str  # "BUY" or "SELL"
+    lot: float
+    pips: float
+    tp_money: Optional[float] = None
+    sl_money: Optional[float] = None
+    commission: float
+    profit: float
+    entry_time: datetime
+    exit_time: datetime
+    entry_price: float
+    exit_price: float
+    position_id: int
+
+
+class TradeHistoryResponse(BaseModel):
+    """Response containing trade history for an account"""
+    account_number: int
+    trades: list[TradeHistory]
+    total_trades: int
+    total_profit: float
+    total_commission: float

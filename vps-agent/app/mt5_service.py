@@ -3,7 +3,7 @@ from typing import Optional
 from datetime import datetime, timedelta
 import logging
 import time
-from .models import AccountInfo, AccountResponse
+from .models import AccountInfo, AccountResponse, TradeHistory, TradeHistoryResponse
 
 logger = logging.getLogger(__name__)
 
@@ -250,3 +250,155 @@ class MT5Service:
                 prop_firm=self.prop_firm,
                 initial_balance=self.initial_balance
             )
+
+    def get_trade_history(self, from_date: Optional[datetime] = None, days: Optional[int] = None) -> Optional[TradeHistoryResponse]:
+        """
+        Get detailed trade history (closed trades only)
+
+        Args:
+            from_date: Start date for fetching trades (optional, for incremental fetching)
+            days: Number of days to look back (optional, ignored if from_date is provided)
+
+        Returns:
+            TradeHistoryResponse with list of closed trades
+        """
+        try:
+            if not self.initialized:
+                self.initialize()
+
+            account_info = self.get_account_info()
+            if not account_info:
+                logger.error(f"Cannot get trade history - account not connected for {self.display_name}")
+                return None
+
+            # Determine start date
+            if from_date is None:
+                # If no from_date, use days parameter (default 30 days for initial fetch)
+                days = days if days is not None else 30
+                from_date = datetime.now() - timedelta(days=days)
+
+            logger.info(f"Fetching trade history for {self.display_name} from {from_date.strftime('%Y-%m-%d')}")
+
+            # Get deals from specified date
+            deals = mt5.history_deals_get(from_date, datetime.now())
+
+            if deals is None or len(deals) == 0:
+                logger.info(f"No deals found for {self.display_name} in last {days} days")
+                return TradeHistoryResponse(
+                    account_number=account_info.account_number,
+                    trades=[],
+                    total_trades=0,
+                    total_profit=0.0,
+                    total_commission=0.0
+                )
+
+            # Filter to only include actual trades (BUY=0, SELL=1)
+            # Exclude balance operations, credits, etc.
+            trade_deals = [deal for deal in deals if deal.type in (0, 1)]
+
+            if not trade_deals:
+                logger.info(f"No trade deals found for {self.display_name} in last {days} days")
+                return TradeHistoryResponse(
+                    account_number=account_info.account_number,
+                    trades=[],
+                    total_trades=0,
+                    total_profit=0.0,
+                    total_commission=0.0
+                )
+
+            # Group deals by position_id to reconstruct complete trades
+            positions = {}
+            for deal in trade_deals:
+                pos_id = deal.position_id
+                if pos_id not in positions:
+                    positions[pos_id] = {'entry': None, 'exit': None}
+
+                # Entry deal (opens position)
+                if deal.entry == 0:  # DEAL_ENTRY_IN
+                    positions[pos_id]['entry'] = deal
+                # Exit deal (closes position)
+                elif deal.entry == 1:  # DEAL_ENTRY_OUT
+                    positions[pos_id]['exit'] = deal
+
+            # Build trade history from completed positions (both entry and exit)
+            trades = []
+            total_profit = 0.0
+            total_commission = 0.0
+
+            for pos_id, pos_data in positions.items():
+                entry_deal = pos_data['entry']
+                exit_deal = pos_data['exit']
+
+                # Only include completed trades (both entry and exit)
+                if entry_deal and exit_deal:
+                    # Get symbol info for pip calculation
+                    symbol_info = mt5.symbol_info(entry_deal.symbol)
+                    if symbol_info is None:
+                        logger.warning(f"Could not get symbol info for {entry_deal.symbol}, skipping pip calculation")
+                        point = 0.0001  # Default for forex pairs
+                        digits = 5
+                    else:
+                        point = symbol_info.point
+                        digits = symbol_info.digits
+
+                    # Calculate pips
+                    # For BUY: pips = (exit_price - entry_price) / point
+                    # For SELL: pips = (entry_price - exit_price) / point
+                    price_diff = exit_deal.price - entry_deal.price
+                    if entry_deal.type == 1:  # SELL
+                        price_diff = -price_diff
+
+                    pips = price_diff / point
+                    # Adjust for 3/5 digit brokers (if digits is 3 or 5, divide by 10)
+                    if digits in (3, 5):
+                        pips = pips / 10
+
+                    # Determine side (entry deal type)
+                    side = "BUY" if entry_deal.type == 0 else "SELL"
+
+                    # Total commission and profit for this trade
+                    trade_commission = entry_deal.commission + exit_deal.commission
+                    trade_profit = exit_deal.profit  # Exit deal contains the P/L
+
+                    # Try to get TP/SL from historical positions (may not be available)
+                    # Note: MT5 history_deals_get doesn't provide TP/SL directly
+                    # These would need to be fetched from orders or positions if needed
+                    tp_money = None
+                    sl_money = None
+
+                    trade = TradeHistory(
+                        symbol=entry_deal.symbol,
+                        side=side,
+                        lot=entry_deal.volume,
+                        pips=round(pips, 1),
+                        tp_money=tp_money,
+                        sl_money=sl_money,
+                        commission=round(trade_commission, 2),
+                        profit=round(trade_profit, 2),
+                        entry_time=datetime.fromtimestamp(entry_deal.time),
+                        exit_time=datetime.fromtimestamp(exit_deal.time),
+                        entry_price=entry_deal.price,
+                        exit_price=exit_deal.price,
+                        position_id=pos_id
+                    )
+
+                    trades.append(trade)
+                    total_profit += trade_profit
+                    total_commission += trade_commission
+
+            # Sort trades by exit time (most recent first)
+            trades.sort(key=lambda x: x.exit_time, reverse=True)
+
+            logger.info(f"Found {len(trades)} completed trades for {self.display_name} in last {days} days")
+
+            return TradeHistoryResponse(
+                account_number=account_info.account_number,
+                trades=trades,
+                total_trades=len(trades),
+                total_profit=round(total_profit, 2),
+                total_commission=round(total_commission, 2)
+            )
+
+        except Exception as e:
+            logger.error(f"Error getting trade history for {self.display_name}: {str(e)}")
+            return None
