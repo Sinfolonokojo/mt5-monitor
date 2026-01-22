@@ -26,6 +26,11 @@ class Settings(BaseSettings):
     # Phase data file path
     PHASE_DATA_FILE: str = "data/phases.json"
 
+    # Google Sheets Integration (Optional)
+    GOOGLE_SHEETS_CREDENTIALS_FILE: str = "credentials.json"
+    GOOGLE_SHEETS_SPREADSHEET_ID: str = ""
+    GOOGLE_SHEETS_WORKSHEET_NAME: str = "MT5 Accounts"
+
     @property
     def VPS_AGENTS(self) -> List[Dict]:
         """Parse VPS agents from JSON string"""

@@ -7,6 +7,7 @@ from .aggregator import data_aggregator
 from .cache import cache
 from .phase_manager import phase_manager
 from .vs_manager import vs_manager
+from .google_sheets_service import google_sheets_service
 from .models import AggregatedResponse, VPSAgentStatus, AccountData, PhaseUpdateRequest, VSUpdateRequest
 from .utils import setup_logging
 from typing import List
@@ -146,6 +147,52 @@ async def update_account_vs(account_number: int, request: VSUpdateRequest):
         raise
     except Exception as e:
         logger.error(f"Error updating VS: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/sync-to-sheets")
+async def sync_to_google_sheets():
+    """Sync current account data to Google Sheets"""
+    try:
+        logger.info("Starting Google Sheets sync")
+
+        # Get current account data
+        cached_data = cache.get()
+        if cached_data:
+            # Cache stores a tuple (accounts, agent_statuses)
+            accounts, agent_statuses = cached_data
+            logger.info("Using cached data for Google Sheets sync")
+            # Cached accounts are AccountData objects, convert to dict
+            accounts_list = [account.dict() for account in accounts]
+        else:
+            logger.info("Fetching fresh data for Google Sheets sync")
+            # fetch_all_agents returns (raw_accounts as dicts, agent_statuses) tuple
+            raw_accounts, agent_statuses = await data_aggregator.fetch_all_agents()
+            # raw_accounts are already dictionaries
+            accounts_list = raw_accounts
+
+        # Construct the data dict that google_sheets_service expects
+        data = {
+            "accounts": accounts_list,
+            "total_accounts": len(accounts_list),
+            "agent_statuses": agent_statuses,
+            "last_refresh": datetime.now().isoformat()
+        }
+
+        # Sync to Google Sheets
+        result = google_sheets_service.sync_accounts(data)
+
+        if result.get("success"):
+            logger.info(f"Successfully synced {result.get('accounts_synced', 0)} accounts to Google Sheets")
+            return result
+        else:
+            logger.error(f"Google Sheets sync failed: {result.get('error')}")
+            raise HTTPException(status_code=500, detail=result.get('error', 'Unknown error'))
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error syncing to Google Sheets: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
