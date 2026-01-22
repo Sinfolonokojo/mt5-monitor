@@ -159,8 +159,18 @@ body.dark-mode [style*='color: "#374151"'] {
   color: #e5e7eb !important;
 }
 
-/* Ensure all table headers are visible */
-body.dark-mode th {
+/* Ensure all table headers are visible - MAXIMUM SPECIFICITY */
+body.dark-mode th,
+body.dark-mode thead th,
+body.dark-mode table thead th,
+body.dark-mode table thead tr th {
+  color: #f9fafb !important;
+}
+
+/* Override specific color inline styles in table headers */
+body.dark-mode th[style*="color"],
+body.dark-mode thead th[style*="color"],
+body.dark-mode table thead th[style*="color"] {
   color: #f9fafb !important;
 }
 
@@ -197,19 +207,16 @@ body.dark-mode div[style*="borderRadius: 50%"][style*="width: 10px"] {
   box-shadow: 0 0 4px currentColor;
 }
 
-body.dark-mode div[style*="borderRadius"][style*="backgroundColor: #22c55e"],
-body.dark-mode div[style*="borderRadius"][style*="backgroundColor:#22c55e"] {
-  background-color: #4ade80 !important; /* Brighter green for visibility */
+/* Status indicator dots - ULTRA SPECIFIC SELECTORS */
+body.dark-mode div[style*="borderRadius"][style*="backgroundColor"],
+body.dark-mode div[style*="border-radius"][style*="background-color"] {
+  filter: brightness(1.3) saturate(1.2);
 }
 
-body.dark-mode div[style*="borderRadius"][style*="backgroundColor: #ef4444"],
-body.dark-mode div[style*="borderRadius"][style*="backgroundColor:#ef4444"] {
-  background-color: #f87171 !important; /* Brighter red for visibility */
-}
-
-body.dark-mode div[style*="borderRadius"][style*="backgroundColor: #f59e0b"],
-body.dark-mode div[style*="borderRadius"][style*="backgroundColor:#f59e0b"] {
-  background-color: #fbbf24 !important; /* Brighter orange for visibility */
+body.dark-mode div[style*="width: 10px"][style*="height: 10px"][style*="borderRadius: 50%"],
+body.dark-mode div[style*="width:10px"][style*="height:10px"][style*="borderRadius:50%"] {
+  filter: brightness(1.5) saturate(1.3) !important;
+  box-shadow: 0 0 6px currentColor !important;
 }
 
 /* Background colors for status indicators and info boxes */
@@ -248,8 +255,20 @@ body.dark-mode div[style*="padding"][style*="backgroundColor"] div {
 body.dark-mode [style*="color: #1f2937"],
 body.dark-mode [style*="color:#1f2937"],
 body.dark-mode [style*="color: #0f172a"],
-body.dark-mode [style*="color:#0f172a"] {
+body.dark-mode [style*="color:#0f172a"],
+body.dark-mode [style*="color: '#1f2937'"],
+body.dark-mode [style*="color: '#0f172a'"],
+body.dark-mode [style*='color: "#1f2937"'],
+body.dark-mode [style*='color: "#0f172a"'] {
   color: #f9fafb !important;
+}
+
+/* NUCLEAR OPTION: Override ALL inline color styles with dark values */
+body.dark-mode [style*="color: '#374151'"],
+body.dark-mode [style*='color: "#374151"'],
+body.dark-mode *[style*="color: #374151"],
+body.dark-mode *[style*="color:#374151"] {
+  color: #e5e7eb !important;
 }
 
 /* Preserve profit/loss colors but make them brighter */
@@ -400,6 +419,37 @@ body.dark-mode table tbody tr:nth-child(even) {
 
 body.dark-mode table tbody tr:hover {
   background-color: #374151 !important;
+}
+
+/* ============================================
+   FINAL NUCLEAR OVERRIDES - MUST BE LAST
+   ============================================ */
+
+/* Force ALL text elements to be readable */
+body.dark-mode * {
+  /* Let CSS handle colors, but ensure minimum contrast */
+}
+
+/* Any element with inline style color that's dark, make it light */
+body.dark-mode *[style] {
+  /* This will be overridden by more specific rules above */
+}
+
+/* Table headers with any color inline style */
+body.dark-mode table th[style],
+body.dark-mode table thead th[style] {
+  color: #f9fafb !important;
+}
+
+/* Modal content with dark text colors */
+body.dark-mode div[style*="color"][style*="#"] {
+  color: inherit;
+}
+
+body.dark-mode h2[style*="color"],
+body.dark-mode h3[style*="color"],
+body.dark-mode div[style*="fontSize"][style*="color"] {
+  color: #f9fafb !important;
 }
 
 /* Ensure table content text is visible */

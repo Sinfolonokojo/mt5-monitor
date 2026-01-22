@@ -13,10 +13,48 @@ function App() {
     return saved ? JSON.parse(saved) : false;
   });
 
-  // Apply dark mode class to body
+  // Apply dark mode class to body and adjust inline styles
   useEffect(() => {
     if (darkMode) {
       document.body.classList.add('dark-mode');
+
+      // Fix inline styles that don't respond to CSS overrides
+      const fixInlineStyles = () => {
+        // Fix table headers with dark text
+        document.querySelectorAll('th[style*="color"]').forEach(el => {
+          if (el.style.color.includes('374151') || el.style.color.includes('111827') || el.style.color.includes('6b7280')) {
+            el.style.color = '#f9fafb';
+          }
+        });
+
+        // Fix status dots to be brighter
+        document.querySelectorAll('div[style*="borderRadius: 50%"][style*="backgroundColor"]').forEach(el => {
+          if (el.style.backgroundColor.includes('22c55e')) {
+            el.style.backgroundColor = '#4ade80';
+            el.style.boxShadow = '0 0 6px #4ade80';
+          } else if (el.style.backgroundColor.includes('ef4444')) {
+            el.style.backgroundColor = '#f87171';
+            el.style.boxShadow = '0 0 6px #f87171';
+          }
+        });
+
+        // Fix any dark text in modals
+        document.querySelectorAll('[style*="color"]').forEach(el => {
+          const color = el.style.color;
+          if (color.includes('111827') || color.includes('374151') || color.includes('1f2937')) {
+            el.style.color = '#f9fafb';
+          } else if (color.includes('6b7280')) {
+            el.style.color = '#d1d5db';
+          }
+        });
+      };
+
+      // Run immediately and on DOM changes
+      fixInlineStyles();
+      const observer = new MutationObserver(fixInlineStyles);
+      observer.observe(document.body, { childList: true, subtree: true });
+
+      return () => observer.disconnect();
     } else {
       document.body.classList.remove('dark-mode');
     }
