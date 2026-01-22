@@ -9,7 +9,7 @@ import TradeHistoryModal from './TradeHistoryModal';
 import apiService from '../services/api';
 
 const AccountsTable = ({ data, loading, error, onRefresh, editMode, onPhaseUpdate, onVSUpdate }) => {
-  const [sortMode, setSortMode] = useState('VS'); // 'VS', 'PL_DESC', 'PL_ASC', 'HOLDER'
+  const [sortMode, setSortMode] = useState('VS'); // 'VS', 'PL_DESC', 'PL_ASC', 'HOLDER_ASC', 'HOLDER_DESC'
   const [selectedAccount, setSelectedAccount] = useState(null);
   const [tradeHistoryAccount, setTradeHistoryAccount] = useState(null);
   const [openTradeFilter, setOpenTradeFilter] = useState('all'); // 'all', 'with_open', 'without_open'
@@ -98,11 +98,16 @@ const AccountsTable = ({ data, loading, error, onRefresh, editMode, onPhaseUpdat
       } else if (sortMode === 'PL_ASC') {
         // Sort by P/L ascending (lowest profit/highest loss first)
         return aPL - bPL;
-      } else if (sortMode === 'HOLDER') {
-        // Sort by account holder alphabetically
+      } else if (sortMode === 'HOLDER_ASC') {
+        // Sort by account holder alphabetically A-Z
         const aHolder = (a.account_holder || '').toLowerCase();
         const bHolder = (b.account_holder || '').toLowerCase();
         return aHolder.localeCompare(bHolder);
+      } else if (sortMode === 'HOLDER_DESC') {
+        // Sort by account holder alphabetically Z-A
+        const aHolder = (a.account_holder || '').toLowerCase();
+        const bHolder = (b.account_holder || '').toLowerCase();
+        return bHolder.localeCompare(aHolder);
       } else {
         // VS mode - sort by VS grouping (use merged VS groups)
         const aGroup = mergedVSGroups[a.account_number];
@@ -181,7 +186,14 @@ const AccountsTable = ({ data, loading, error, onRefresh, editMode, onPhaseUpdat
   };
 
   const handleHolderHeaderClick = () => {
-    setSortMode('HOLDER');
+    // Cycle through: HOLDER_ASC -> HOLDER_DESC -> PL_DESC (remove filter)
+    if (sortMode === 'HOLDER_ASC') {
+      setSortMode('HOLDER_DESC');
+    } else if (sortMode === 'HOLDER_DESC') {
+      setSortMode('PL_DESC'); // Back to default
+    } else {
+      setSortMode('HOLDER_ASC');
+    }
   };
 
   const handleExportToExcel = () => {
@@ -440,7 +452,8 @@ const AccountsTable = ({ data, loading, error, onRefresh, editMode, onPhaseUpdat
               <option value="VS">Ordenar: VS Grupos</option>
               <option value="PL_DESC">Ordenar: Mayor P/L</option>
               <option value="PL_ASC">Ordenar: Menor P/L</option>
-              <option value="HOLDER">Ordenar: Titular A-Z</option>
+              <option value="HOLDER_ASC">Ordenar: Titular A-Z</option>
+              <option value="HOLDER_DESC">Ordenar: Titular Z-A</option>
             </select>
             <select
               value={openTradeFilter}
@@ -513,11 +526,11 @@ const AccountsTable = ({ data, loading, error, onRefresh, editMode, onPhaseUpdat
                     fontWeight: '600',
                     cursor: 'pointer',
                     userSelect: 'none',
-                    backgroundColor: sortMode === 'HOLDER' ? '#e5e7eb' : 'transparent',
+                    backgroundColor: sortMode.startsWith('HOLDER_') ? '#e5e7eb' : 'transparent',
                     transition: 'background-color 0.2s'
                   }}
                 >
-                  Holder {sortMode === 'HOLDER' ? '✓' : ''}
+                  Holder {sortMode === 'HOLDER_ASC' ? '↓' : sortMode === 'HOLDER_DESC' ? '↑' : ''}
                 </th>
                 <th
                   style={{ padding: '12px 16px', textAlign: 'center', fontWeight: '600' }}
