@@ -27,14 +27,11 @@ function App() {
           }
         });
 
-        // Fix status dots to be brighter
-        document.querySelectorAll('div[style*="borderRadius: 50%"][style*="backgroundColor"]').forEach(el => {
-          if (el.style.backgroundColor.includes('22c55e')) {
-            el.style.backgroundColor = '#4ade80';
-            el.style.boxShadow = '0 0 6px #4ade80';
-          } else if (el.style.backgroundColor.includes('ef4444')) {
-            el.style.backgroundColor = '#f87171';
-            el.style.boxShadow = '0 0 6px #f87171';
+        // Fix table header backgrounds in trade history modal
+        document.querySelectorAll('thead tr[style*="backgroundColor"]').forEach(el => {
+          if (el.style.backgroundColor.includes('f9fafb')) {
+            el.style.backgroundColor = '#1f2937';
+            el.style.borderBottom = '2px solid #374151';
           }
         });
 

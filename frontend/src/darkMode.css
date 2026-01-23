@@ -357,8 +357,17 @@ body.dark-mode [style*="white"] {
 
 /* Table row alternating colors */
 body.dark-mode [style*="backgroundColor"][style*="#f9fafb"],
-body.dark-mode [style*="backgroundColor: #f9fafb"] {
+body.dark-mode [style*="backgroundColor: #f9fafb"],
+body.dark-mode [style*="backgroundColor:#f9fafb"] {
   background-color: #0f172a !important;
+}
+
+/* Trade history modal table headers - FORCE DARK BACKGROUND */
+body.dark-mode table thead tr[style*="backgroundColor: #f9fafb"],
+body.dark-mode table thead tr[style*="backgroundColor:#f9fafb"],
+body.dark-mode thead tr[style*="#f9fafb"] {
+  background-color: #1f2937 !important;
+  border-bottom: 2px solid #374151 !important;
 }
 
 /* Ensure tr elements are dark */
