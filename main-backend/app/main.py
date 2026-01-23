@@ -173,8 +173,13 @@ async def sync_to_google_sheets():
             logger.info("Fetching fresh data for Google Sheets sync")
             # fetch_all_agents returns (raw_accounts as dicts, agent_statuses) tuple
             raw_accounts, agent_statuses = await data_aggregator.fetch_all_agents()
-            # raw_accounts are already dictionaries
-            accounts_list = raw_accounts
+            # Enrich raw accounts with phase data
+            accounts_list = []
+            for raw_account in raw_accounts:
+                account_dict = raw_account.copy()
+                # Add phase data from phase_manager
+                account_dict['phase'] = phase_manager.get_phase(raw_account["account_number"])
+                accounts_list.append(account_dict)
 
         # Construct the data dict that google_sheets_service expects
         data = {
