@@ -67,8 +67,9 @@ const MobileAccountCard = ({ account, editMode, onPhaseUpdate, onVSUpdate, vsGro
               width: '12px',
               height: '12px',
               borderRadius: '50%',
-              backgroundColor: account.status === 'connected' ? greenColor : redColor,
-              boxShadow: isDarkMode ? `0 0 10px ${account.status === 'connected' ? greenColor : redColor}` : 'none'
+              backgroundColor: account.status === 'connected' ? '#ffffff' : '#000000',
+              boxShadow: isDarkMode ? `0 0 10px ${account.status === 'connected' ? '#ffffff' : '#000000'}` : 'none',
+              border: '1px solid #6b7280'
             }}
             title={account.status === 'connected' ? 'Conectado' : 'Desconectado'}
           />

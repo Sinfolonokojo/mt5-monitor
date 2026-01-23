@@ -1,18 +1,7 @@
-import { getStatusColor } from '../utils/formatters';
-
 const StatusIndicator = ({ status }) => {
+  // White for connected, black for disconnected
+  const color = status === 'connected' ? '#ffffff' : '#000000';
   const isDarkMode = document.body.classList.contains('dark-mode');
-  const baseColor = getStatusColor(status);
-
-  // Use much brighter colors in dark mode for visibility
-  let color = baseColor;
-  if (isDarkMode) {
-    if (baseColor === '#22c55e') {
-      color = '#10b981'; // Bright emerald green
-    } else if (baseColor === '#ef4444') {
-      color = '#f87171'; // Bright red
-    }
-  }
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -23,6 +12,7 @@ const StatusIndicator = ({ status }) => {
           borderRadius: '50%',
           backgroundColor: color,
           boxShadow: isDarkMode ? `0 0 10px ${color}` : 'none',
+          border: '1px solid #6b7280',
         }}
       />
       <span style={{ textTransform: 'capitalize' }}>{status}</span>

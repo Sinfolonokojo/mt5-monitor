@@ -54,9 +54,10 @@ const TableRow = ({ account, editMode, onPhaseUpdate, onVSUpdate, vsGroup, onRow
             width: '12px',
             height: '12px',
             borderRadius: '50%',
-            backgroundColor: account.status === 'connected' ? greenColor : redColor,
+            backgroundColor: account.status === 'connected' ? '#ffffff' : '#000000',
             margin: '0 auto',
-            boxShadow: isDarkMode ? `0 0 10px ${account.status === 'connected' ? greenColor : redColor}` : 'none'
+            boxShadow: isDarkMode ? `0 0 10px ${account.status === 'connected' ? '#ffffff' : '#000000'}` : 'none',
+            border: '1px solid #6b7280'
           }}
         />
       </td>
