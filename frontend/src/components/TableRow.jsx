@@ -54,10 +54,14 @@ const TableRow = ({ account, editMode, onPhaseUpdate, onVSUpdate, vsGroup, onRow
             width: '12px',
             height: '12px',
             borderRadius: '50%',
-            backgroundColor: account.status === 'connected' ? '#ffffff' : '#000000',
+            backgroundColor: isDarkMode
+              ? (account.status === 'connected' ? '#ffffff' : '#000000')
+              : (account.status === 'connected' ? '#22c55e' : '#ef4444'),
             margin: '0 auto',
-            boxShadow: isDarkMode ? `0 0 10px ${account.status === 'connected' ? '#ffffff' : '#000000'}` : 'none',
-            border: '1px solid #6b7280'
+            border: isDarkMode && account.status === 'connected' ? '2px solid #374151' : 'none',
+            boxShadow: isDarkMode
+              ? `0 0 10px ${account.status === 'connected' ? '#ffffff' : '#000000'}`
+              : (account.status === 'connected' ? '0 2px 4px rgba(34, 197, 94, 0.4)' : '0 2px 4px rgba(239, 68, 68, 0.4)')
           }}
         />
       </td>

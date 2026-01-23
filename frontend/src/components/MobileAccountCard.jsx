@@ -67,9 +67,13 @@ const MobileAccountCard = ({ account, editMode, onPhaseUpdate, onVSUpdate, vsGro
               width: '12px',
               height: '12px',
               borderRadius: '50%',
-              backgroundColor: account.status === 'connected' ? '#ffffff' : '#000000',
-              boxShadow: isDarkMode ? `0 0 10px ${account.status === 'connected' ? '#ffffff' : '#000000'}` : 'none',
-              border: '1px solid #6b7280'
+              backgroundColor: isDarkMode
+                ? (account.status === 'connected' ? '#ffffff' : '#000000')
+                : (account.status === 'connected' ? '#22c55e' : '#ef4444'),
+              border: isDarkMode && account.status === 'connected' ? '1px solid #6b7280' : 'none',
+              boxShadow: isDarkMode
+                ? `0 0 10px ${account.status === 'connected' ? '#ffffff' : '#000000'}`
+                : (account.status === 'connected' ? '0 2px 4px rgba(34, 197, 94, 0.4)' : '0 2px 4px rgba(239, 68, 68, 0.4)')
             }}
             title={account.status === 'connected' ? 'Conectado' : 'Desconectado'}
           />
