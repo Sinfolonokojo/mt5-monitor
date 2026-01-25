@@ -360,8 +360,11 @@ async def get_single_account(account_number: int):
     Uses cached VPS mapping to fetch only the target account's data
     """
     try:
+        logger.info(f"Single account fetch requested for account {account_number}")
+
         # Find VPS for this account
         vps_source = account_vps_cache.get(account_number)
+        logger.info(f"VPS source from cache: {vps_source}")
 
         if not vps_source:
             # Cache miss - fetch all to populate cache (rare case)
@@ -393,20 +396,29 @@ async def get_single_account(account_number: int):
 
         # Find the specific account in the response
         raw_account = None
-        if isinstance(accounts_data, dict) and "accounts" in accounts_data:
-            # Response is wrapped in an object with accounts array
+
+        # Case 1: Single account object (VPS agent returns just one account)
+        if isinstance(accounts_data, dict) and "account_number" in accounts_data:
+            if accounts_data["account_number"] == account_number:
+                raw_account = accounts_data
+                logger.info(f"Found account {account_number} as single object from VPS {vps_source}")
+        # Case 2: Response is wrapped in an object with accounts array
+        elif isinstance(accounts_data, dict) and "accounts" in accounts_data:
             for acc in accounts_data["accounts"]:
                 if acc["account_number"] == account_number:
                     raw_account = acc
+                    logger.info(f"Found account {account_number} in accounts array from VPS {vps_source}")
                     break
+        # Case 3: Response is a list of accounts
         elif isinstance(accounts_data, list):
-            # Response is a list of accounts
             for acc in accounts_data:
                 if acc["account_number"] == account_number:
                     raw_account = acc
+                    logger.info(f"Found account {account_number} in accounts list from VPS {vps_source}")
                     break
 
         if not raw_account:
+            logger.error(f"Account {account_number} not found in VPS {vps_source} response. Response type: {type(accounts_data)}, keys: {accounts_data.keys() if isinstance(accounts_data, dict) else 'N/A'}")
             raise HTTPException(status_code=404, detail=f"Account {account_number} not found on VPS {vps_source}")
 
         raw_account["vps_source"] = vps_source
