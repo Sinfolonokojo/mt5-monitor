@@ -13,8 +13,13 @@ const MobileAccountCard = ({ account, editMode, onPhaseUpdate, onVSUpdate, vsGro
   const maxLoss = calculateMaxLoss(account.balance, initialBalance);
   const rowBgColor = getRowBackgroundColor(account.balance, initialBalance);
 
-  const plColor = profitLoss >= 0 ? '#22c55e' : '#ef4444';
-  const maxLossColor = maxLoss >= 0 ? '#22c55e' : '#ef4444';
+  // Check for dark mode - use brighter colors for visibility
+  const isDarkMode = document.body.classList.contains('dark-mode');
+  const greenColor = isDarkMode ? '#10b981' : '#22c55e';
+  const redColor = isDarkMode ? '#f87171' : '#ef4444';
+
+  const plColor = profitLoss >= 0 ? greenColor : redColor;
+  const maxLossColor = maxLoss >= 0 ? greenColor : redColor;
 
   const handleCardClick = (e) => {
     // Don't trigger if clicking on editable elements
@@ -62,7 +67,13 @@ const MobileAccountCard = ({ account, editMode, onPhaseUpdate, onVSUpdate, vsGro
               width: '12px',
               height: '12px',
               borderRadius: '50%',
-              backgroundColor: account.status === 'connected' ? '#22c55e' : '#ef4444',
+              backgroundColor: isDarkMode
+                ? (account.status === 'connected' ? '#ffffff' : '#000000')
+                : (account.status === 'connected' ? '#22c55e' : '#ef4444'),
+              border: isDarkMode && account.status === 'connected' ? '1px solid #6b7280' : 'none',
+              boxShadow: isDarkMode
+                ? `0 0 10px ${account.status === 'connected' ? '#ffffff' : '#000000'}`
+                : (account.status === 'connected' ? '0 2px 4px rgba(34, 197, 94, 0.4)' : '0 2px 4px rgba(239, 68, 68, 0.4)')
             }}
             title={account.status === 'connected' ? 'Conectado' : 'Desconectado'}
           />

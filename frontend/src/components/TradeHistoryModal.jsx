@@ -89,10 +89,10 @@ const TradeHistoryModal = ({ account, onClose }) => {
         >
           <div>
             <h2 style={{ margin: 0, fontSize: '24px', fontWeight: '700', color: '#111827' }}>
-              Trade History - Account {account.account_number}
+              Ver Historial
             </h2>
-            <p style={{ margin: '4px 0 0 0', fontSize: '14px', color: '#6b7280' }}>
-              {account.account_name} ({account.account_holder})
+            <p style={{ margin: '4px 0 0 0', fontSize: '16px', color: '#6b7280', fontWeight: '500' }}>
+              {account.account_number} ({account.account_holder})
             </p>
           </div>
           <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>

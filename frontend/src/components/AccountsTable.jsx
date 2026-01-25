@@ -578,7 +578,7 @@ const AccountsTable = ({ data, loading, error, onRefresh, editMode, onPhaseUpdat
                     transition: 'background-color 0.2s'
                   }}
                 >
-                  Open Trade {openTradeFilter === 'with_open' ? '✓' : openTradeFilter === 'without_open' ? '✗' : ''}
+                  Trade Abierto {openTradeFilter === 'with_open' ? '✓' : openTradeFilter === 'without_open' ? '✗' : ''}
                 </th>
                 <th
                   onClick={handleVSHeaderClick}

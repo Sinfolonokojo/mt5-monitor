@@ -84,8 +84,9 @@ class GoogleSheetsService:
                 'Account Number',
                 'Holder',
                 'Prop Firm',
-                'Balance',
-                'P/L'
+                'Phase',
+                'Day Operating',
+                'Balance'
             ]
 
             # Prepare data rows
@@ -97,16 +98,20 @@ class GoogleSheetsService:
             rows = [headers]
 
             for account in sorted_accounts:
-                initial_balance = account.get('initial_balance', 100000)
                 balance = account.get('balance', 0)
-                pl = balance - initial_balance
+                phase_value = account.get('phase', 'N/A')
+
+                # Debug: Log if phase is missing or N/A
+                if phase_value == 'N/A':
+                    logger.warning(f"Account {account.get('account_number')} has phase=N/A. Account keys: {list(account.keys())}")
 
                 row = [
                     str(account.get('account_number', '')),
                     account.get('account_holder', ''),
                     account.get('prop_firm', ''),
-                    balance,
-                    pl
+                    phase_value,
+                    account.get('days_operating', 'N/A'),
+                    balance
                 ]
                 rows.append(row)
 
@@ -114,7 +119,7 @@ class GoogleSheetsService:
             worksheet.update('A1', rows)
 
             # Format the header row
-            worksheet.format('A1:E1', {
+            worksheet.format('A1:F1', {
                 'backgroundColor': {'red': 0.2, 'green': 0.2, 'blue': 0.2},
                 'textFormat': {
                     'foregroundColor': {'red': 1.0, 'green': 1.0, 'blue': 1.0},
@@ -123,26 +128,6 @@ class GoogleSheetsService:
                 },
                 'horizontalAlignment': 'CENTER'
             })
-
-            # Format P/L column with colors
-            for i, account in enumerate(sorted_accounts, start=2):
-                initial_balance = account.get('initial_balance', 100000)
-                balance = account.get('balance', 0)
-                pl = balance - initial_balance
-
-                # Color P/L cells
-                if pl >= 0:
-                    color = {'red': 0.0, 'green': 0.7, 'blue': 0.3}
-                else:
-                    color = {'red': 0.9, 'green': 0.2, 'blue': 0.2}
-
-                worksheet.format(f'E{i}', {
-                    'backgroundColor': color,
-                    'textFormat': {
-                        'foregroundColor': {'red': 1.0, 'green': 1.0, 'blue': 1.0},
-                        'bold': True
-                    }
-                })
 
             # Auto-resize columns
             worksheet.columns_auto_resize(0, len(headers) - 1)

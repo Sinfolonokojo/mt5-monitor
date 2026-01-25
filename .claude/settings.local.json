@@ -3,7 +3,37 @@
     "allow": [
       "Bash(dir:*)",
       "Bash(git init:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(python -m uvicorn:*)",
+      "Bash(python -m json.tool:*)",
+      "Bash(find \"C:\\\\Users\\\\Admin\\\\Projects\\\\Programar_Dia\\\\vps-agent\" -type f -name \"agents*.json\" -exec cat {} ;)",
+      "Bash(ls:*)",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nDeploy VPS2 auto-reconnection + add FTMO accounts to VPS1/VPS2\n\n## Deployment System Created\n- Added deployment helper scripts \\(deploy-to-vps.ps1, deploy-all-vps.ps1\\)\n- Added config generator for VPS5-10 \\(create-vps-config.ps1\\)\n- Added comprehensive documentation \\(DEPLOYMENT_CHECKLIST.md, QUICK_START.md\\)\n- Added VPS address mapping with credentials \\(vps-addresses.json\\)\n\n## VPS Configuration Updates\n- Updated VPS1 \\(Yojan Forero\\): Added FTMO account 531121568 on port 8002\n- Updated VPS2 \\(Leandro Forero\\): Added FTMO account 531121571 on port 8002\n- Standardized config format with account_holder, prop_firm, initial_balance\n- Updated backend .env to include VPS1-FTMO and VPS2-FTMO endpoints\n\n## VPS2 Deployment Completed\n- Successfully deployed auto-reconnection system to VPS2\n- Running 3 agents: FivePercent \\(8000\\), FundedNext \\(8001\\), FTMO \\(8002\\)\n- Health checks active every 60 seconds\n- Firewall rules configured for all ports\n\n## Cleanup\n- Removed obsolete Windows service files \\(launcher_service.py, WINDOWS_SERVICE_SETUP.md\\)\n\n## Monitoring\n- VPS1: 3 accounts \\(FN: 13911428, T5: 25841531, FTMO: 531121568\\)\n- VPS2: 3 accounts \\(T5: 25841549, FN: 13889597, FTMO: 531121571\\)\n- Total: 6 accounts being monitored with auto-reconnection\n\nCo-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(git push)",
+      "Bash(powershell -ExecutionPolicy Bypass -File .deploy-to-vps.ps1 -VPSName VPS3 -VPSAddress 89.116.26.238 -DryRun)",
+      "Bash(powershell -ExecutionPolicy Bypass -Command \"& ''.\\\\deploy-to-vps.ps1'' -VPSName VPS3 -VPSAddress 89.116.26.238 -DryRun\")",
+      "Bash(python:*)",
+      "mcp__ide__getDiagnostics",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(git checkout:*)",
+      "Bash(git merge:*)",
+      "Bash(test:*)",
+      "Bash(git -C \"C:\\\\Users\\\\Admin\\\\Projects\\\\Programar_Dia\" log --oneline -20)",
+      "Bash(git -C \"C:\\\\Users\\\\Admin\\\\Projects\\\\Programar_Dia\" status --short)",
+      "Bash(git -C \"C:\\\\Users\\\\Admin\\\\Projects\\\\Programar_Dia\" log --follow --oneline main-backend/app/google_sheets_service.py)",
+      "Bash(git -C \"C:\\\\Users\\\\Admin\\\\Projects\\\\Programar_Dia\" log --follow --oneline main-backend/GOOGLE_SHEETS_SETUP.md)",
+      "Bash(git -C \"C:\\\\Users\\\\Admin\\\\Projects\\\\Programar_Dia\" log --all --name-status --pretty=format: -- \"main-backend/GOOGLE_SHEETS_SETUP.md\" \"main-backend/app/google_sheets_service.py\")",
+      "Bash(git -C \"C:\\\\Users\\\\Admin\\\\Projects\\\\Programar_Dia\" status main-backend/GOOGLE_SHEETS_SETUP.md main-backend/app/google_sheets_service.py)",
+      "Bash(git -C \"C:\\\\Users\\\\Admin\\\\Projects\\\\Programar_Dia\" ls-files:*)",
+      "Bash(git -C \"C:\\\\Users\\\\Admin\\\\Projects\\\\Programar_Dia\" diff --name-only)",
+      "Bash(git -C \"C:\\\\Users\\\\Admin\\\\Projects\\\\Programar_Dia\" diff --cached --name-only)",
+      "Bash(git -C \"C:\\\\Users\\\\Admin\\\\Projects\\\\Programar_Dia\" diff --stat)",
+      "Bash(git branch:*)",
+      "Bash(gh pr create:*)",
+      "Bash(git fetch:*)",
+      "Bash(npm run build:*)",
+      "Bash(curl http://178.18.247.182:8001/accounts)"
     ]
   }
 }

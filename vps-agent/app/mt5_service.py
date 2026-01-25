@@ -272,12 +272,22 @@ class MT5Service:
                 return None
 
             # Determine start date
+            filter_from_date = None  # Will be used to filter completed trades by exit_time
             if from_date is None:
                 # If no from_date, use days parameter (default 30 days for initial fetch)
                 days = days if days is not None else 30
                 from_date = datetime.now() - timedelta(days=days)
+            else:
+                # For incremental fetch: store the filter date and fetch from earlier
+                # We need to fetch from earlier to capture entry deals for trades that
+                # opened before from_date but closed after it
+                filter_from_date = from_date
+                # Fetch deals from 7 days before to ensure we capture entry deals
+                from_date = from_date - timedelta(days=7)
 
             logger.info(f"Fetching trade history for {self.display_name} from {from_date.strftime('%Y-%m-%d')}")
+            if filter_from_date:
+                logger.info(f"Will filter completed trades by exit_time >= {filter_from_date.strftime('%Y-%m-%d %H:%M:%S')}")
 
             # Get deals from specified date
             deals = mt5.history_deals_get(from_date, datetime.now())
@@ -385,6 +395,16 @@ class MT5Service:
                     trades.append(trade)
                     total_profit += trade_profit
                     total_commission += trade_commission
+
+            # Filter trades by exit_time if this is an incremental fetch
+            if filter_from_date:
+                original_count = len(trades)
+                trades = [t for t in trades if t.exit_time >= filter_from_date]
+                logger.info(f"Filtered {original_count} trades to {len(trades)} trades with exit_time >= {filter_from_date.strftime('%Y-%m-%d %H:%M:%S')}")
+
+                # Recalculate totals after filtering
+                total_profit = sum(t.profit for t in trades)
+                total_commission = sum(t.commission for t in trades)
 
             # Sort trades by exit time (most recent first)
             trades.sort(key=lambda x: x.exit_time, reverse=True)

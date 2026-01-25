@@ -169,12 +169,24 @@ async def sync_to_google_sheets():
             logger.info("Using cached data for Google Sheets sync")
             # Cached accounts are AccountData objects, convert to dict
             accounts_list = [account.dict() for account in accounts]
+            # Debug: Log first account's phase if available
+            if accounts_list:
+                logger.info(f"[CACHE PATH] First account phase: {accounts_list[0].get('phase', 'MISSING')}")
         else:
             logger.info("Fetching fresh data for Google Sheets sync")
             # fetch_all_agents returns (raw_accounts as dicts, agent_statuses) tuple
             raw_accounts, agent_statuses = await data_aggregator.fetch_all_agents()
-            # raw_accounts are already dictionaries
-            accounts_list = raw_accounts
+            # Enrich raw accounts with phase data
+            accounts_list = []
+            for raw_account in raw_accounts:
+                account_dict = raw_account.copy()
+                # Add phase data from phase_manager
+                phase_value = phase_manager.get_phase(raw_account["account_number"])
+                account_dict['phase'] = phase_value
+                accounts_list.append(account_dict)
+            # Debug: Log first account's phase if available
+            if accounts_list:
+                logger.info(f"[FRESH PATH] First account phase: {accounts_list[0].get('phase', 'MISSING')}, Account #: {accounts_list[0].get('account_number')}")
 
         # Construct the data dict that google_sheets_service expects
         data = {

@@ -13,8 +13,13 @@ const TableRow = ({ account, editMode, onPhaseUpdate, onVSUpdate, vsGroup, onRow
   const maxLoss = calculateMaxLoss(account.balance, initialBalance);
   const rowBgColor = getRowBackgroundColor(account.balance, initialBalance);
 
-  const plColor = profitLoss >= 0 ? '#22c55e' : '#ef4444';
-  const maxLossColor = maxLoss >= 0 ? '#22c55e' : '#ef4444';
+  // Check for dark mode - use brighter colors for visibility
+  const isDarkMode = document.body.classList.contains('dark-mode');
+  const greenColor = isDarkMode ? '#10b981' : '#22c55e';
+  const redColor = isDarkMode ? '#f87171' : '#ef4444';
+
+  const plColor = profitLoss >= 0 ? greenColor : redColor;
+  const maxLossColor = maxLoss >= 0 ? greenColor : redColor;
 
   const handleRowClick = (e) => {
     // Don't trigger if clicking on editable elements
@@ -49,8 +54,14 @@ const TableRow = ({ account, editMode, onPhaseUpdate, onVSUpdate, vsGroup, onRow
             width: '12px',
             height: '12px',
             borderRadius: '50%',
-            backgroundColor: account.status === 'connected' ? '#22c55e' : '#ef4444',
-            margin: '0 auto'
+            backgroundColor: isDarkMode
+              ? (account.status === 'connected' ? '#ffffff' : '#000000')
+              : (account.status === 'connected' ? '#22c55e' : '#ef4444'),
+            margin: '0 auto',
+            border: isDarkMode && account.status === 'connected' ? '2px solid #374151' : 'none',
+            boxShadow: isDarkMode
+              ? `0 0 10px ${account.status === 'connected' ? '#ffffff' : '#000000'}`
+              : (account.status === 'connected' ? '0 2px 4px rgba(34, 197, 94, 0.4)' : '0 2px 4px rgba(239, 68, 68, 0.4)')
           }}
         />
       </td>
@@ -117,9 +128,10 @@ const TableRow = ({ account, editMode, onPhaseUpdate, onVSUpdate, vsGroup, onRow
             width: '16px',
             height: '16px',
             borderRadius: '50%',
-            backgroundColor: account.has_open_position ? '#22c55e' : '#e5e7eb',
+            backgroundColor: account.has_open_position ? greenColor : '#e5e7eb',
             margin: '0 auto',
-            border: account.has_open_position ? '2px solid #16a34a' : '2px solid #9ca3af'
+            border: account.has_open_position ? `2px solid ${isDarkMode ? '#059669' : '#16a34a'}` : '2px solid #9ca3af',
+            boxShadow: isDarkMode && account.has_open_position ? `0 0 10px ${greenColor}` : 'none'
           }}
           title={account.has_open_position ? 'Has open position' : 'No open position'}
         />
