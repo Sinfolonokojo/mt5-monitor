@@ -99,12 +99,17 @@ class GoogleSheetsService:
 
             for account in sorted_accounts:
                 balance = account.get('balance', 0)
+                phase_value = account.get('phase', 'N/A')
+
+                # Debug: Log if phase is missing or N/A
+                if phase_value == 'N/A':
+                    logger.warning(f"Account {account.get('account_number')} has phase=N/A. Account keys: {list(account.keys())}")
 
                 row = [
                     str(account.get('account_number', '')),
                     account.get('account_holder', ''),
                     account.get('prop_firm', ''),
-                    account.get('phase', 'N/A'),
+                    phase_value,
                     account.get('days_operating', 'N/A'),
                     balance
                 ]
