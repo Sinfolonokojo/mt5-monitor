@@ -10,7 +10,7 @@ import TradeModal from './TradeModal';
 import OpenPositionsModal from './OpenPositionsModal';
 import apiService from '../services/api';
 
-const AccountsTable = ({ data, loading, error, onRefresh, editMode, onPhaseUpdate, onVSUpdate }) => {
+const AccountsTable = ({ data, loading, error, onRefresh, onRefreshSingleAccount, editMode, onPhaseUpdate, onVSUpdate }) => {
   const [sortMode, setSortMode] = useState('VS'); // 'VS', 'PL_DESC', 'PL_ASC', 'HOLDER_ASC', 'HOLDER_DESC'
   const [selectedAccount, setSelectedAccount] = useState(null);
   const [tradeHistoryAccount, setTradeHistoryAccount] = useState(null);
@@ -663,8 +663,14 @@ const AccountsTable = ({ data, loading, error, onRefresh, editMode, onPhaseUpdat
         <TradeModal
           account={tradeModalAccount}
           onClose={() => setTradeModalAccount(null)}
-          onSuccess={() => {
-            onRefresh();
+          onSuccess={async () => {
+            try {
+              // Fast: Only refresh the account that traded
+              await onRefreshSingleAccount(tradeModalAccount.account_number);
+            } catch (error) {
+              // Fallback to full refresh on error
+              console.error('Single account refresh failed, falling back to full refresh');
+            }
             setTradeModalAccount(null);
           }}
         />
@@ -675,7 +681,7 @@ const AccountsTable = ({ data, loading, error, onRefresh, editMode, onPhaseUpdat
         <OpenPositionsModal
           account={positionsModalAccount}
           onClose={() => setPositionsModalAccount(null)}
-          onRefresh={onRefresh}
+          onRefresh={() => onRefreshSingleAccount(positionsModalAccount.account_number)}
         />
       )}
     </div>

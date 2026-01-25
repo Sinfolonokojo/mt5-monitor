@@ -339,6 +339,106 @@ async def sync_trade_history_to_sheets(account_number: int):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+def invalidate_account_cache(account_number: int):
+    """
+    Invalidate cache entry for a specific account only
+
+    This is faster than clearing the entire cache
+    """
+    # For now, we clear the entire cache since our cache structure doesn't support
+    # partial invalidation. In the future, consider using a dict-based cache
+    # where we can delete specific keys.
+    cache.clear()
+    # Note: We intentionally DON'T clear account_vps_cache as VPS mapping is stable
+
+
+@app.get("/api/accounts/{account_number}", response_model=AccountData)
+async def get_single_account(account_number: int):
+    """
+    Get data for a specific account (fast, no full refresh)
+
+    Uses cached VPS mapping to fetch only the target account's data
+    """
+    try:
+        # Find VPS for this account
+        vps_source = account_vps_cache.get(account_number)
+
+        if not vps_source:
+            # Cache miss - fetch all to populate cache (rare case)
+            logger.info(f"VPS source not in cache for account {account_number}, fetching from agents")
+            await data_aggregator.fetch_all_agents()
+            vps_source = account_vps_cache.get(account_number)
+
+            if not vps_source:
+                raise HTTPException(status_code=404, detail=f"Account {account_number} not found")
+
+        # Get agent config
+        agent_config = None
+        for agent in settings.VPS_AGENTS:
+            if agent.get("name") == vps_source:
+                agent_config = agent
+                break
+
+        if not agent_config:
+            raise HTTPException(status_code=500, detail=f"VPS agent configuration not found for {vps_source}")
+
+        # Fetch just this account from the VPS agent
+        async with httpx.AsyncClient(timeout=settings.AGENT_TIMEOUT) as client:
+            response = await client.get(f"{agent_config['url']}/accounts")
+
+            if response.status_code != 200:
+                raise HTTPException(status_code=response.status_code, detail="Failed to fetch account data")
+
+            accounts_data = response.json()
+
+        # Find the specific account in the response
+        raw_account = None
+        if isinstance(accounts_data, dict) and "accounts" in accounts_data:
+            # Response is wrapped in an object with accounts array
+            for acc in accounts_data["accounts"]:
+                if acc["account_number"] == account_number:
+                    raw_account = acc
+                    break
+        elif isinstance(accounts_data, list):
+            # Response is a list of accounts
+            for acc in accounts_data:
+                if acc["account_number"] == account_number:
+                    raw_account = acc
+                    break
+
+        if not raw_account:
+            raise HTTPException(status_code=404, detail=f"Account {account_number} not found on VPS {vps_source}")
+
+        raw_account["vps_source"] = vps_source
+
+        # Build AccountData object with phase/vs enrichment
+        account = AccountData(
+            row_number=1,  # Not used in single account context
+            account_number=raw_account["account_number"],
+            account_name=raw_account["account_name"],
+            balance=raw_account["balance"],
+            status=raw_account["status"],
+            phase=phase_manager.get_phase(raw_account["account_number"]),
+            days_operating=raw_account["days_operating"],
+            has_open_position=raw_account.get("has_open_position", False),
+            vps_source=raw_account["vps_source"],
+            last_updated=datetime.fromisoformat(raw_account["last_updated"].replace("Z", "+00:00")) if isinstance(raw_account["last_updated"], str) else raw_account["last_updated"],
+            account_holder=raw_account.get("account_holder", "Unknown"),
+            prop_firm=raw_account.get("prop_firm", "N/A"),
+            initial_balance=raw_account.get("initial_balance", 100000.0),
+            vs_group=vs_manager.get_vs(raw_account["account_number"])
+        )
+
+        logger.info(f"Successfully fetched single account {account_number}")
+        return account
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching account {account_number}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch account: {str(e)}")
+
+
 # Trading Endpoints (Proxy to VPS Agents)
 
 @app.post("/api/accounts/{account_number}/trade/open")
@@ -418,9 +518,8 @@ async def proxy_open_position(account_number: int, request: dict):
 
             # Clear cache after successful trade to ensure fresh data
             if result.get("success"):
-                cache.clear()
-                account_vps_cache.clear()
-                logger.info("Cache cleared after successful trade")
+                invalidate_account_cache(account_number)
+                logger.info(f"Cache invalidated for account {account_number}")
 
             return result
 
@@ -511,9 +610,8 @@ async def proxy_close_position(account_number: int, request: dict):
 
             # Clear cache after successful trade to ensure fresh data
             if result.get("success"):
-                cache.clear()
-                account_vps_cache.clear()
-                logger.info("Cache cleared after successful trade")
+                invalidate_account_cache(account_number)
+                logger.info(f"Cache invalidated for account {account_number}")
 
             return result
 
@@ -604,9 +702,8 @@ async def proxy_modify_position(account_number: int, request: dict):
 
             # Clear cache after successful trade to ensure fresh data
             if result.get("success"):
-                cache.clear()
-                account_vps_cache.clear()
-                logger.info("Cache cleared after successful trade")
+                invalidate_account_cache(account_number)
+                logger.info(f"Cache invalidated for account {account_number}")
 
             return result
 

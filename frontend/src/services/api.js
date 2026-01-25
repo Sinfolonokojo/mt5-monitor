@@ -150,6 +150,23 @@ class ApiService {
     }
   }
 
+  async fetchSingleAccount(accountNumber) {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/accounts/${accountNumber}`);
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        const errorMessage = errorData.detail || `HTTP error! status: ${response.status}`;
+        throw new Error(errorMessage);
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.error('Error fetching single account:', error);
+      throw error;
+    }
+  }
+
   // Trading API Methods
 
   async openPosition(accountNumber, positionData) {

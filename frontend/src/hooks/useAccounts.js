@@ -21,9 +21,38 @@ export const useAccounts = () => {
   }, []);
 
   const refresh = useCallback(async () => {
-    await apiService.forceRefresh();
+    // No need to call forceRefresh() - fetchAccounts(true) already forces fresh data
     await fetchAccounts(true);
   }, [fetchAccounts]);
+
+  // New function: Refresh single account (optimized)
+  const refreshSingleAccount = useCallback(async (accountNumber) => {
+    try {
+      const updatedAccount = await apiService.fetchSingleAccount(accountNumber);
+
+      // Update just this account in the state
+      setData(prevData => {
+        if (!prevData?.accounts) return prevData;
+
+        const updatedAccounts = prevData.accounts.map(acc =>
+          acc.account_number === accountNumber ? updatedAccount : acc
+        );
+
+        return {
+          ...prevData,
+          accounts: updatedAccounts,
+          last_refresh: new Date().toISOString()
+        };
+      });
+
+      return updatedAccount;
+    } catch (error) {
+      console.error(`Error refreshing account ${accountNumber}:`, error);
+      // Fallback to full refresh
+      await refresh();
+      throw error;
+    }
+  }, [refresh]);
 
   const updatePhase = useCallback(async (accountNumber, phaseValue) => {
     try {
@@ -51,6 +80,7 @@ export const useAccounts = () => {
     error,
     fetchAccounts,
     refresh,
+    refreshSingleAccount,
     updatePhase,
     updateVS
   };

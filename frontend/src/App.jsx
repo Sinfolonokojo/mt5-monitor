@@ -5,7 +5,7 @@ import './App.css';
 import './darkMode.css';
 
 function App() {
-  const { data, loading, error, fetchAccounts, refresh, updatePhase, updateVS } = useAccounts();
+  const { data, loading, error, fetchAccounts, refresh, refreshSingleAccount, updatePhase, updateVS } = useAccounts();
   const [editMode, setEditMode] = useState(false);
   const [darkMode, setDarkMode] = useState(() => {
     // Initialize from localStorage or default to false
@@ -115,6 +115,7 @@ function App() {
           loading={loading}
           error={error}
           onRefresh={refresh}
+          onRefreshSingleAccount={refreshSingleAccount}
           editMode={editMode}
           onPhaseUpdate={handlePhaseUpdate}
           onVSUpdate={handleVSUpdate}
