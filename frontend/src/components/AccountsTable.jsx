@@ -669,7 +669,7 @@ const AccountsTable = ({ data, loading, error, onRefresh, onRefreshSingleAccount
             try {
               // Show success notification
               setNotification({
-                message: `✓ Trade opened: ${tradeInfo.orderType} ${tradeInfo.lot} lots ${tradeInfo.symbol}`,
+                message: `✓ Operación abierta: ${tradeInfo.orderType} ${tradeInfo.lot} lotes ${tradeInfo.symbol}`,
                 type: 'success',
               });
 
@@ -700,6 +700,7 @@ const AccountsTable = ({ data, loading, error, onRefresh, onRefreshSingleAccount
           account={positionsModalAccount}
           onClose={() => setPositionsModalAccount(null)}
           onRefresh={() => onRefreshSingleAccount(positionsModalAccount.account_number)}
+          onNotification={(notif) => setNotification(notif)}
         />
       )}
     </div>

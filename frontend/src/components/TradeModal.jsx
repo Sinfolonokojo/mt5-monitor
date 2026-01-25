@@ -29,22 +29,22 @@ const TradeModal = ({ account, onClose, onSuccess }) => {
 
   const validateForm = () => {
     if (!formData.symbol || formData.symbol.trim() === '') {
-      setError('Symbol is required');
+      setError('El símbolo es requerido');
       return false;
     }
 
     if (formData.lot < 0.01 || formData.lot > 100) {
-      setError('Lot size must be between 0.01 and 100');
+      setError('El tamaño del lote debe estar entre 0.01 y 100');
       return false;
     }
 
     if (formData.sl !== '' && parseFloat(formData.sl) <= 0) {
-      setError('Stop Loss must be greater than 0');
+      setError('El Stop Loss debe ser mayor que 0');
       return false;
     }
 
     if (formData.tp !== '' && parseFloat(formData.tp) <= 0) {
-      setError('Take Profit must be greater than 0');
+      setError('El Take Profit debe ser mayor que 0');
       return false;
     }
 
@@ -97,11 +97,11 @@ const TradeModal = ({ account, onClose, onSuccess }) => {
         // Keep modal open for rapid trading
         // User can manually close with X button or Cancel
       } else {
-        setError(result.message || 'Failed to open position');
+        setError(result.message || 'Error al abrir la posición');
         setShowConfirm(false);
       }
     } catch (err) {
-      setError(err.message || 'Failed to open position');
+      setError(err.message || 'Error al abrir la posición');
       setShowConfirm(false);
     } finally {
       setLoading(false);
@@ -148,7 +148,7 @@ const TradeModal = ({ account, onClose, onSuccess }) => {
           }}
         >
           <h2 style={{ margin: 0, fontSize: '24px', fontWeight: '700', color: '#111827' }}>
-            Open Trade
+            Abrir Operación
           </h2>
           <button
             onClick={onClose}
@@ -174,7 +174,7 @@ const TradeModal = ({ account, onClose, onSuccess }) => {
             borderBottom: '1px solid #e5e7eb',
           }}
         >
-          <div style={{ fontSize: '14px', color: '#6b7280' }}>Account</div>
+          <div style={{ fontSize: '14px', color: '#6b7280' }}>Cuenta</div>
           <div style={{ fontSize: '18px', fontWeight: '600', color: '#111827', marginTop: '4px' }}>
             {account.account_name} (#{account.account_number})
           </div>
@@ -202,7 +202,7 @@ const TradeModal = ({ account, onClose, onSuccess }) => {
           {/* Symbol */}
           <div style={{ marginBottom: '20px' }}>
             <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', color: '#374151', marginBottom: '8px' }}>
-              Symbol *
+              Símbolo *
             </label>
             <input
               type="text"
@@ -225,7 +225,7 @@ const TradeModal = ({ account, onClose, onSuccess }) => {
           {/* Order Type */}
           <div style={{ marginBottom: '20px' }}>
             <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', color: '#374151', marginBottom: '8px' }}>
-              Order Type *
+              Tipo de Orden *
             </label>
             <div style={{ display: 'flex', gap: '12px' }}>
               <button
@@ -270,7 +270,7 @@ const TradeModal = ({ account, onClose, onSuccess }) => {
           {/* Lot Size */}
           <div style={{ marginBottom: '20px' }}>
             <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', color: '#374151', marginBottom: '8px' }}>
-              Lot Size *
+              Tamaño del Lote *
             </label>
             <input
               type="number"
@@ -295,7 +295,7 @@ const TradeModal = ({ account, onClose, onSuccess }) => {
           {/* Stop Loss */}
           <div style={{ marginBottom: '20px' }}>
             <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', color: '#374151', marginBottom: '8px' }}>
-              Stop Loss (optional)
+              Stop Loss (opcional)
             </label>
             <input
               type="number"
@@ -304,7 +304,7 @@ const TradeModal = ({ account, onClose, onSuccess }) => {
               onChange={handleInputChange}
               step="0.00001"
               min="0"
-              placeholder="Leave empty for no SL"
+              placeholder="Dejar vacío para sin SL"
               style={{
                 width: '100%',
                 padding: '10px 12px',
@@ -319,7 +319,7 @@ const TradeModal = ({ account, onClose, onSuccess }) => {
           {/* Take Profit */}
           <div style={{ marginBottom: '20px' }}>
             <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', color: '#374151', marginBottom: '8px' }}>
-              Take Profit (optional)
+              Take Profit (opcional)
             </label>
             <input
               type="number"
@@ -328,7 +328,7 @@ const TradeModal = ({ account, onClose, onSuccess }) => {
               onChange={handleInputChange}
               step="0.00001"
               min="0"
-              placeholder="Leave empty for no TP"
+              placeholder="Dejar vacío para sin TP"
               style={{
                 width: '100%',
                 padding: '10px 12px',
@@ -343,7 +343,7 @@ const TradeModal = ({ account, onClose, onSuccess }) => {
           {/* Comment */}
           <div style={{ marginBottom: '24px' }}>
             <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', color: '#374151', marginBottom: '8px' }}>
-              Comment
+              Comentario
             </label>
             <input
               type="text"
@@ -380,7 +380,7 @@ const TradeModal = ({ account, onClose, onSuccess }) => {
                   cursor: 'pointer',
                 }}
               >
-                Cancel
+                Cancelar
               </button>
               <button
                 type="submit"
@@ -398,7 +398,7 @@ const TradeModal = ({ account, onClose, onSuccess }) => {
                   opacity: loading ? 0.6 : 1,
                 }}
               >
-                {loading ? 'Opening...' : 'Open Position'}
+                {loading ? 'Abriendo...' : 'Abrir Posición'}
               </button>
             </div>
           ) : (
@@ -413,11 +413,11 @@ const TradeModal = ({ account, onClose, onSuccess }) => {
                 }}
               >
                 <div style={{ fontSize: '14px', fontWeight: '600', color: '#92400e', marginBottom: '8px' }}>
-                  Confirm Trade
+                  Confirmar Operación
                 </div>
                 <div style={{ fontSize: '13px', color: '#78350f' }}>
-                  You are about to open a <strong>{formData.order_type}</strong> position on{' '}
-                  <strong>{formData.symbol}</strong> with <strong>{formData.lot}</strong> lots.
+                  Estás a punto de abrir una posición <strong>{formData.order_type}</strong> en{' '}
+                  <strong>{formData.symbol}</strong> con <strong>{formData.lot}</strong> lotes.
                 </div>
               </div>
               <div style={{ display: 'flex', gap: '12px' }}>
@@ -437,7 +437,7 @@ const TradeModal = ({ account, onClose, onSuccess }) => {
                     cursor: loading ? 'not-allowed' : 'pointer',
                   }}
                 >
-                  Back
+                  Volver
                 </button>
                 <button
                   type="button"
@@ -456,7 +456,7 @@ const TradeModal = ({ account, onClose, onSuccess }) => {
                     opacity: loading ? 0.6 : 1,
                   }}
                 >
-                  {loading ? 'Confirming...' : 'Confirm Trade'}
+                  {loading ? 'Confirmando...' : 'Confirmar Operación'}
                 </button>
               </div>
             </div>

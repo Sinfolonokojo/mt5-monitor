@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import apiService from '../services/api';
 
-const OpenPositionsModal = ({ account, onClose, onRefresh }) => {
+const OpenPositionsModal = ({ account, onClose, onRefresh, onNotification }) => {
   const [positions, setPositions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -29,7 +29,8 @@ const OpenPositionsModal = ({ account, onClose, onRefresh }) => {
   };
 
   const handleClosePosition = async (ticket) => {
-    if (!window.confirm('Are you sure you want to close this position?')) {
+    const position = positions.find(p => p.ticket === ticket);
+    if (!window.confirm('¿Estás seguro de que quieres cerrar esta posición?')) {
       return;
     }
 
@@ -40,12 +41,20 @@ const OpenPositionsModal = ({ account, onClose, onRefresh }) => {
       const result = await apiService.closePosition(account.account_number, ticket);
 
       if (result.success) {
+        // Show success notification
+        if (onNotification) {
+          onNotification({
+            message: `✓ Posición cerrada: ${position.symbol} (Ticket: ${ticket})`,
+            type: 'success',
+          });
+        }
+
         await fetchPositions();
         if (onRefresh) {
           onRefresh();
         }
       } else {
-        setError(result.message || 'Failed to close position');
+        setError(result.message || 'Error al cerrar la posición');
       }
     } catch (err) {
       setError(err.message);
@@ -70,6 +79,7 @@ const OpenPositionsModal = ({ account, onClose, onRefresh }) => {
   };
 
   const handleSaveModify = async (ticket) => {
+    const position = positions.find(p => p.ticket === ticket);
     try {
       setActionLoading(prev => ({ ...prev, [`modify_${ticket}`]: true }));
       setError(null);
@@ -82,13 +92,21 @@ const OpenPositionsModal = ({ account, onClose, onRefresh }) => {
       );
 
       if (result.success) {
+        // Show success notification
+        if (onNotification) {
+          onNotification({
+            message: `✓ Posición modificada: ${position.symbol} (SL/TP actualizados)`,
+            type: 'success',
+          });
+        }
+
         setEditingPosition(null);
         await fetchPositions();
         if (onRefresh) {
           onRefresh();
         }
       } else {
-        setError(result.message || 'Failed to modify position');
+        setError(result.message || 'Error al modificar la posición');
       }
     } catch (err) {
       setError(err.message);
@@ -144,7 +162,7 @@ const OpenPositionsModal = ({ account, onClose, onRefresh }) => {
         >
           <div>
             <h2 style={{ margin: 0, fontSize: '24px', fontWeight: '700', color: '#111827' }}>
-              Open Positions
+              Posiciones Abiertas
             </h2>
             <p style={{ margin: '4px 0 0 0', fontSize: '16px', color: '#6b7280', fontWeight: '500' }}>
               {account.account_number} ({account.account_holder})
@@ -195,11 +213,11 @@ const OpenPositionsModal = ({ account, onClose, onRefresh }) => {
         <div style={{ flex: 1, overflow: 'auto', padding: '24px' }}>
           {loading ? (
             <div style={{ textAlign: 'center', padding: '40px', color: '#6b7280' }}>
-              Loading positions...
+              Cargando posiciones...
             </div>
           ) : positions.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '40px', color: '#6b7280' }}>
-              No open positions
+              Sin posiciones abiertas
             </div>
           ) : (
             <div style={{ overflowX: 'auto' }}>
@@ -207,15 +225,15 @@ const OpenPositionsModal = ({ account, onClose, onRefresh }) => {
                 <thead>
                   <tr style={{ borderBottom: '2px solid #e5e7eb' }}>
                     <th style={{ padding: '12px 8px', textAlign: 'left', fontWeight: '600', color: '#374151' }}>Ticket</th>
-                    <th style={{ padding: '12px 8px', textAlign: 'left', fontWeight: '600', color: '#374151' }}>Symbol</th>
-                    <th style={{ padding: '12px 8px', textAlign: 'left', fontWeight: '600', color: '#374151' }}>Type</th>
-                    <th style={{ padding: '12px 8px', textAlign: 'right', fontWeight: '600', color: '#374151' }}>Volume</th>
-                    <th style={{ padding: '12px 8px', textAlign: 'right', fontWeight: '600', color: '#374151' }}>Open Price</th>
-                    <th style={{ padding: '12px 8px', textAlign: 'right', fontWeight: '600', color: '#374151' }}>Current</th>
+                    <th style={{ padding: '12px 8px', textAlign: 'left', fontWeight: '600', color: '#374151' }}>Símbolo</th>
+                    <th style={{ padding: '12px 8px', textAlign: 'left', fontWeight: '600', color: '#374151' }}>Tipo</th>
+                    <th style={{ padding: '12px 8px', textAlign: 'right', fontWeight: '600', color: '#374151' }}>Volumen</th>
+                    <th style={{ padding: '12px 8px', textAlign: 'right', fontWeight: '600', color: '#374151' }}>Precio Apertura</th>
+                    <th style={{ padding: '12px 8px', textAlign: 'right', fontWeight: '600', color: '#374151' }}>Actual</th>
                     <th style={{ padding: '12px 8px', textAlign: 'right', fontWeight: '600', color: '#374151' }}>SL</th>
                     <th style={{ padding: '12px 8px', textAlign: 'right', fontWeight: '600', color: '#374151' }}>TP</th>
-                    <th style={{ padding: '12px 8px', textAlign: 'right', fontWeight: '600', color: '#374151' }}>Profit</th>
-                    <th style={{ padding: '12px 8px', textAlign: 'center', fontWeight: '600', color: '#374151' }}>Actions</th>
+                    <th style={{ padding: '12px 8px', textAlign: 'right', fontWeight: '600', color: '#374151' }}>Ganancia</th>
+                    <th style={{ padding: '12px 8px', textAlign: 'center', fontWeight: '600', color: '#374151' }}>Acciones</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -308,7 +326,7 @@ const OpenPositionsModal = ({ account, onClose, onRefresh }) => {
                                 opacity: actionLoading[`modify_${position.ticket}`] ? 0.6 : 1,
                               }}
                             >
-                              {actionLoading[`modify_${position.ticket}`] ? 'Saving...' : 'Save'}
+                              {actionLoading[`modify_${position.ticket}`] ? 'Guardando...' : 'Guardar'}
                             </button>
                             <button
                               onClick={handleCancelEdit}
@@ -323,7 +341,7 @@ const OpenPositionsModal = ({ account, onClose, onRefresh }) => {
                                 cursor: 'pointer',
                               }}
                             >
-                              Cancel
+                              Cancelar
                             </button>
                           </div>
                         ) : (
@@ -341,7 +359,7 @@ const OpenPositionsModal = ({ account, onClose, onRefresh }) => {
                                 cursor: 'pointer',
                               }}
                             >
-                              Modify
+                              Modificar
                             </button>
                             <button
                               onClick={() => handleClosePosition(position.ticket)}
@@ -358,7 +376,7 @@ const OpenPositionsModal = ({ account, onClose, onRefresh }) => {
                                 opacity: actionLoading[`close_${position.ticket}`] ? 0.6 : 1,
                               }}
                             >
-                              {actionLoading[`close_${position.ticket}`] ? 'Closing...' : 'Close'}
+                              {actionLoading[`close_${position.ticket}`] ? 'Cerrando...' : 'Cerrar'}
                             </button>
                           </div>
                         )}
@@ -384,10 +402,10 @@ const OpenPositionsModal = ({ account, onClose, onRefresh }) => {
             }}
           >
             <div style={{ fontSize: '14px', color: '#6b7280' }}>
-              Total Positions: <strong style={{ color: '#111827' }}>{positions.length}</strong>
+              Total Posiciones: <strong style={{ color: '#111827' }}>{positions.length}</strong>
             </div>
             <div style={{ fontSize: '14px', color: '#6b7280' }}>
-              Total Profit:{' '}
+              Ganancia Total:{' '}
               <strong
                 style={{
                   color: positions.reduce((sum, p) => sum + p.profit, 0) >= 0 ? '#22c55e' : '#ef4444',
