@@ -8,6 +8,7 @@ import AccountDetailsModal from './AccountDetailsModal';
 import TradeHistoryModal from './TradeHistoryModal';
 import TradeModal from './TradeModal';
 import OpenPositionsModal from './OpenPositionsModal';
+import Notification from './Notification';
 import apiService from '../services/api';
 
 const AccountsTable = ({ data, loading, error, onRefresh, onRefreshSingleAccount, editMode, onPhaseUpdate, onVSUpdate }) => {
@@ -21,6 +22,7 @@ const AccountsTable = ({ data, loading, error, onRefresh, onRefreshSingleAccount
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncMessage, setSyncMessage] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [notification, setNotification] = useState(null);
 
   // Detect screen size for responsive layout
   useEffect(() => {
@@ -663,16 +665,32 @@ const AccountsTable = ({ data, loading, error, onRefresh, onRefreshSingleAccount
         <TradeModal
           account={tradeModalAccount}
           onClose={() => setTradeModalAccount(null)}
-          onSuccess={async () => {
+          onSuccess={async (tradeInfo) => {
             try {
+              // Show success notification
+              setNotification({
+                message: `✓ Trade opened: ${tradeInfo.orderType} ${tradeInfo.lot} lots ${tradeInfo.symbol}`,
+                type: 'success',
+              });
+
               // Fast: Only refresh the account that traded
               await onRefreshSingleAccount(tradeModalAccount.account_number);
             } catch (error) {
               // Fallback to full refresh on error
               console.error('Single account refresh failed, falling back to full refresh');
             }
-            setTradeModalAccount(null);
+            // Keep modal open for next trade (user can close manually)
           }}
+        />
+      )}
+
+      {/* Success Notification */}
+      {notification && (
+        <Notification
+          message={notification.message}
+          type={notification.type}
+          duration={3000}
+          onClose={() => setNotification(null)}
         />
       )}
 

@@ -2,14 +2,16 @@ import { useState } from 'react';
 import apiService from '../services/api';
 
 const TradeModal = ({ account, onClose, onSuccess }) => {
-  const [formData, setFormData] = useState({
+  const initialFormData = {
     symbol: 'EURUSD',
     order_type: 'BUY',
     lot: 0.01,
     sl: '',
     tp: '',
     comment: 'MT5Monitor'
-  });
+  };
+
+  const [formData, setFormData] = useState(initialFormData);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [showConfirm, setShowConfirm] = useState(false);
@@ -78,10 +80,22 @@ const TradeModal = ({ account, onClose, onSuccess }) => {
       const result = await apiService.openPosition(account.account_number, positionData);
 
       if (result.success) {
+        // Reset form for next trade
+        setFormData(initialFormData);
+        setShowConfirm(false);
+        setError(null);
+
+        // Call success callback (shows notification and refreshes account)
         if (onSuccess) {
-          onSuccess();
+          onSuccess({
+            symbol: positionData.symbol,
+            orderType: positionData.order_type,
+            lot: positionData.lot,
+          });
         }
-        onClose();
+
+        // Keep modal open for rapid trading
+        // User can manually close with X button or Cancel
       } else {
         setError(result.message || 'Failed to open position');
         setShowConfirm(false);
