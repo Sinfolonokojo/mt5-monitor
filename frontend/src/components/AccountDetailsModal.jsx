@@ -1,6 +1,6 @@
 import { formatCurrency, calculateProfitLoss, calculateMaxLoss } from '../utils/formatters';
 
-const AccountDetailsModal = ({ account, onClose, vsGroup, onViewTrades }) => {
+const AccountDetailsModal = ({ account, onClose, vsGroup, onViewTrades, onOpenTrade, onViewPositions }) => {
   if (!account) return null;
 
   const initialBalance = account.initial_balance || 100000;
@@ -71,7 +71,47 @@ const AccountDetailsModal = ({ account, onClose, vsGroup, onViewTrades }) => {
           <h2 style={{ margin: 0, fontSize: '24px', fontWeight: '700', color: '#111827' }}>
             Detalles de la Cuenta
           </h2>
-          <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
+            {onOpenTrade && (
+              <button
+                onClick={() => onOpenTrade(account)}
+                style={{
+                  padding: '8px 16px',
+                  backgroundColor: '#22c55e',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '6px',
+                  fontSize: '14px',
+                  fontWeight: '500',
+                  cursor: 'pointer',
+                  transition: 'background-color 0.2s',
+                }}
+                onMouseEnter={(e) => e.target.style.backgroundColor = '#16a34a'}
+                onMouseLeave={(e) => e.target.style.backgroundColor = '#22c55e'}
+              >
+                Open Trade
+              </button>
+            )}
+            {onViewPositions && (
+              <button
+                onClick={() => onViewPositions(account)}
+                style={{
+                  padding: '8px 16px',
+                  backgroundColor: '#8b5cf6',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '6px',
+                  fontSize: '14px',
+                  fontWeight: '500',
+                  cursor: 'pointer',
+                  transition: 'background-color 0.2s',
+                }}
+                onMouseEnter={(e) => e.target.style.backgroundColor = '#7c3aed'}
+                onMouseLeave={(e) => e.target.style.backgroundColor = '#8b5cf6'}
+              >
+                View Positions
+              </button>
+            )}
             {onViewTrades && (
               <button
                 onClick={onViewTrades}

@@ -149,6 +149,94 @@ class ApiService {
       throw error;
     }
   }
+
+  // Trading API Methods
+
+  async openPosition(accountNumber, positionData) {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/accounts/${accountNumber}/trade/open`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(positionData)
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        const errorMessage = errorData.detail || errorData.message || `HTTP error! status: ${response.status}`;
+        throw new Error(errorMessage);
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.error('Error opening position:', error);
+      throw error;
+    }
+  }
+
+  async closePosition(accountNumber, ticket, deviation = 20) {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/accounts/${accountNumber}/trade/close`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ ticket, deviation })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        const errorMessage = errorData.detail || errorData.message || `HTTP error! status: ${response.status}`;
+        throw new Error(errorMessage);
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.error('Error closing position:', error);
+      throw error;
+    }
+  }
+
+  async modifyPosition(accountNumber, ticket, sl, tp) {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/accounts/${accountNumber}/trade/modify`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ ticket, sl, tp })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        const errorMessage = errorData.detail || errorData.message || `HTTP error! status: ${response.status}`;
+        throw new Error(errorMessage);
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.error('Error modifying position:', error);
+      throw error;
+    }
+  }
+
+  async fetchOpenPositions(accountNumber) {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/accounts/${accountNumber}/positions`);
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        const errorMessage = errorData.detail || `HTTP error! status: ${response.status}`;
+        throw new Error(errorMessage);
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.error('Error fetching open positions:', error);
+      throw error;
+    }
+  }
 }
 
 export default new ApiService();

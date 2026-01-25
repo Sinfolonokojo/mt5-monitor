@@ -31,6 +31,10 @@ class Settings(BaseSettings):
     GOOGLE_SHEETS_SPREADSHEET_ID: str = ""
     GOOGLE_SHEETS_WORKSHEET_NAME: str = "MT5 Accounts"
 
+    # Trading Safety Settings
+    TRADING_ENABLED: bool = False  # Set to True to enable trading
+    DEMO_MODE_ONLY: bool = True  # Set to False to allow live trading (not implemented yet)
+
     @property
     def VPS_AGENTS(self) -> List[Dict]:
         """Parse VPS agents from JSON string"""

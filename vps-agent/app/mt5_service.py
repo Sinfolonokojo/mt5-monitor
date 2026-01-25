@@ -3,7 +3,12 @@ from typing import Optional
 from datetime import datetime, timedelta
 import logging
 import time
-from .models import AccountInfo, AccountResponse, TradeHistory, TradeHistoryResponse
+from .models import (
+    AccountInfo, AccountResponse, TradeHistory, TradeHistoryResponse,
+    OpenPositionRequest, OpenPositionResponse, ClosePositionRequest,
+    ClosePositionResponse, ModifyPositionRequest, ModifyPositionResponse,
+    OpenPosition, OpenPositionsResponse
+)
 
 logger = logging.getLogger(__name__)
 
@@ -422,3 +427,446 @@ class MT5Service:
         except Exception as e:
             logger.error(f"Error getting trade history for {self.display_name}: {str(e)}")
             return None
+
+    # Trading Methods
+
+    def validate_symbol(self, symbol: str) -> tuple[bool, str]:
+        """
+        Validate that a symbol exists and is tradeable
+
+        Returns:
+            (success, message) tuple
+        """
+        try:
+            symbol_info = mt5.symbol_info(symbol)
+            if symbol_info is None:
+                return False, f"Symbol {symbol} not found"
+
+            # Try to enable symbol if not visible
+            if not symbol_info.visible:
+                if not mt5.symbol_select(symbol, True):
+                    return False, f"Failed to enable symbol {symbol}"
+                # Re-fetch symbol info after enabling
+                symbol_info = mt5.symbol_info(symbol)
+
+            # Check if trading is allowed
+            if not symbol_info.trade_mode == mt5.SYMBOL_TRADE_MODE_FULL:
+                return False, f"Trading not allowed for symbol {symbol}"
+
+            return True, "Symbol valid"
+
+        except Exception as e:
+            logger.error(f"Error validating symbol {symbol}: {str(e)}")
+            return False, f"Error validating symbol: {str(e)}"
+
+    def open_position(self, request: OpenPositionRequest) -> OpenPositionResponse:
+        """
+        Open a new market position
+
+        Args:
+            request: OpenPositionRequest with trade parameters
+
+        Returns:
+            OpenPositionResponse with result
+        """
+        try:
+            # Safety checks
+            if not self.initialized:
+                return OpenPositionResponse(
+                    success=False,
+                    message="MT5 not initialized",
+                    error_code=-1
+                )
+
+            account_info = mt5.account_info()
+            if account_info is None:
+                return OpenPositionResponse(
+                    success=False,
+                    message="Failed to get account info",
+                    error_code=-2
+                )
+
+            if not account_info.trade_allowed:
+                return OpenPositionResponse(
+                    success=False,
+                    message="Trading not allowed on this account",
+                    error_code=-3
+                )
+
+            # Validate symbol
+            is_valid, msg = self.validate_symbol(request.symbol)
+            if not is_valid:
+                return OpenPositionResponse(
+                    success=False,
+                    message=msg,
+                    error_code=-4
+                )
+
+            symbol_info = mt5.symbol_info(request.symbol)
+
+            # Check lot size limits
+            if request.lot < symbol_info.volume_min:
+                return OpenPositionResponse(
+                    success=False,
+                    message=f"Lot size {request.lot} below minimum {symbol_info.volume_min}",
+                    error_code=-5
+                )
+
+            if request.lot > symbol_info.volume_max:
+                return OpenPositionResponse(
+                    success=False,
+                    message=f"Lot size {request.lot} above maximum {symbol_info.volume_max}",
+                    error_code=-6
+                )
+
+            # Get current price
+            tick = mt5.symbol_info_tick(request.symbol)
+            if tick is None:
+                return OpenPositionResponse(
+                    success=False,
+                    message="Failed to get current price",
+                    error_code=-7
+                )
+
+            # Determine order type and price
+            if request.order_type.upper() == "BUY":
+                order_type = mt5.ORDER_TYPE_BUY
+                price = tick.ask
+            elif request.order_type.upper() == "SELL":
+                order_type = mt5.ORDER_TYPE_SELL
+                price = tick.bid
+            else:
+                return OpenPositionResponse(
+                    success=False,
+                    message=f"Invalid order type: {request.order_type}. Must be BUY or SELL",
+                    error_code=-8
+                )
+
+            # Check margin requirement (150% safety buffer)
+            margin_required = mt5.order_calc_margin(order_type, request.symbol, request.lot, price)
+            if margin_required is None:
+                logger.warning(f"Could not calculate margin for {request.symbol}, proceeding anyway")
+            elif margin_required * 1.5 > account_info.margin_free:
+                return OpenPositionResponse(
+                    success=False,
+                    message=f"Insufficient margin. Required: {margin_required * 1.5:.2f}, Available: {account_info.margin_free:.2f}",
+                    error_code=-9
+                )
+
+            # Build order request
+            order_request = {
+                "action": mt5.TRADE_ACTION_DEAL,
+                "symbol": request.symbol,
+                "volume": request.lot,
+                "type": order_type,
+                "price": price,
+                "deviation": 20,
+                "magic": 234000,
+                "comment": request.comment or "MT5Monitor",
+                "type_time": mt5.ORDER_TIME_GTC,
+                "type_filling": mt5.ORDER_FILLING_IOC,
+            }
+
+            # Add SL/TP if provided
+            if request.sl is not None:
+                order_request["sl"] = request.sl
+            if request.tp is not None:
+                order_request["tp"] = request.tp
+
+            # Send order
+            logger.info(f"Sending order: {order_request}")
+            result = mt5.order_send(order_request)
+
+            if result is None:
+                error = mt5.last_error()
+                return OpenPositionResponse(
+                    success=False,
+                    message=f"order_send failed: {error}",
+                    error_code=-10
+                )
+
+            if result.retcode != mt5.TRADE_RETCODE_DONE:
+                return OpenPositionResponse(
+                    success=False,
+                    message=f"Order failed: {result.comment}",
+                    error_code=result.retcode
+                )
+
+            logger.info(f"✅ Position opened successfully: Ticket={result.order}, Price={result.price}")
+
+            return OpenPositionResponse(
+                success=True,
+                ticket=result.order,
+                message=f"Position opened successfully",
+                price=result.price,
+                error_code=0
+            )
+
+        except Exception as e:
+            logger.error(f"Error opening position: {str(e)}")
+            return OpenPositionResponse(
+                success=False,
+                message=f"Exception: {str(e)}",
+                error_code=-999
+            )
+
+    def close_position(self, request: ClosePositionRequest) -> ClosePositionResponse:
+        """
+        Close an existing position
+
+        Args:
+            request: ClosePositionRequest with ticket number
+
+        Returns:
+            ClosePositionResponse with result
+        """
+        try:
+            # Safety checks
+            if not self.initialized:
+                return ClosePositionResponse(
+                    success=False,
+                    ticket=request.ticket,
+                    message="MT5 not initialized"
+                )
+
+            # Get position
+            position = mt5.positions_get(ticket=request.ticket)
+            if position is None or len(position) == 0:
+                return ClosePositionResponse(
+                    success=False,
+                    ticket=request.ticket,
+                    message=f"Position {request.ticket} not found"
+                )
+
+            position = position[0]
+
+            # Check if trading is allowed
+            account_info = mt5.account_info()
+            if account_info and not account_info.trade_allowed:
+                return ClosePositionResponse(
+                    success=False,
+                    ticket=request.ticket,
+                    message="Trading not allowed on this account"
+                )
+
+            # Get current price
+            tick = mt5.symbol_info_tick(position.symbol)
+            if tick is None:
+                return ClosePositionResponse(
+                    success=False,
+                    ticket=request.ticket,
+                    message="Failed to get current price"
+                )
+
+            # Create opposite order to close position
+            if position.type == mt5.POSITION_TYPE_BUY:
+                order_type = mt5.ORDER_TYPE_SELL
+                price = tick.bid
+            else:
+                order_type = mt5.ORDER_TYPE_BUY
+                price = tick.ask
+
+            # Build close request
+            close_request = {
+                "action": mt5.TRADE_ACTION_DEAL,
+                "symbol": position.symbol,
+                "volume": position.volume,
+                "type": order_type,
+                "position": request.ticket,
+                "price": price,
+                "deviation": request.deviation or 20,
+                "magic": 234000,
+                "comment": "Close by MT5Monitor",
+                "type_time": mt5.ORDER_TIME_GTC,
+                "type_filling": mt5.ORDER_FILLING_IOC,
+            }
+
+            # Send close order
+            logger.info(f"Closing position {request.ticket}: {close_request}")
+            result = mt5.order_send(close_request)
+
+            if result is None:
+                error = mt5.last_error()
+                return ClosePositionResponse(
+                    success=False,
+                    ticket=request.ticket,
+                    message=f"order_send failed: {error}"
+                )
+
+            if result.retcode != mt5.TRADE_RETCODE_DONE:
+                return ClosePositionResponse(
+                    success=False,
+                    ticket=request.ticket,
+                    message=f"Close failed: {result.comment}"
+                )
+
+            logger.info(f"✅ Position {request.ticket} closed successfully at {result.price}")
+
+            return ClosePositionResponse(
+                success=True,
+                ticket=request.ticket,
+                message="Position closed successfully",
+                close_price=result.price
+            )
+
+        except Exception as e:
+            logger.error(f"Error closing position {request.ticket}: {str(e)}")
+            return ClosePositionResponse(
+                success=False,
+                ticket=request.ticket,
+                message=f"Exception: {str(e)}"
+            )
+
+    def modify_position(self, request: ModifyPositionRequest) -> ModifyPositionResponse:
+        """
+        Modify SL/TP on an existing position
+
+        Args:
+            request: ModifyPositionRequest with ticket and new SL/TP
+
+        Returns:
+            ModifyPositionResponse with result
+        """
+        try:
+            # Safety checks
+            if not self.initialized:
+                return ModifyPositionResponse(
+                    success=False,
+                    ticket=request.ticket,
+                    message="MT5 not initialized"
+                )
+
+            # Get position
+            position = mt5.positions_get(ticket=request.ticket)
+            if position is None or len(position) == 0:
+                return ModifyPositionResponse(
+                    success=False,
+                    ticket=request.ticket,
+                    message=f"Position {request.ticket} not found"
+                )
+
+            position = position[0]
+
+            # Use existing SL/TP if not provided in request
+            new_sl = request.sl if request.sl is not None else position.sl
+            new_tp = request.tp if request.tp is not None else position.tp
+
+            # Build modify request
+            modify_request = {
+                "action": mt5.TRADE_ACTION_SLTP,
+                "symbol": position.symbol,
+                "position": request.ticket,
+                "sl": new_sl,
+                "tp": new_tp,
+            }
+
+            # Send modify order
+            logger.info(f"Modifying position {request.ticket}: SL={new_sl}, TP={new_tp}")
+            result = mt5.order_send(modify_request)
+
+            if result is None:
+                error = mt5.last_error()
+                return ModifyPositionResponse(
+                    success=False,
+                    ticket=request.ticket,
+                    message=f"order_send failed: {error}"
+                )
+
+            if result.retcode != mt5.TRADE_RETCODE_DONE:
+                return ModifyPositionResponse(
+                    success=False,
+                    ticket=request.ticket,
+                    message=f"Modify failed: {result.comment}"
+                )
+
+            logger.info(f"✅ Position {request.ticket} modified successfully")
+
+            return ModifyPositionResponse(
+                success=True,
+                ticket=request.ticket,
+                message="Position modified successfully",
+                new_sl=new_sl,
+                new_tp=new_tp
+            )
+
+        except Exception as e:
+            logger.error(f"Error modifying position {request.ticket}: {str(e)}")
+            return ModifyPositionResponse(
+                success=False,
+                ticket=request.ticket,
+                message=f"Exception: {str(e)}"
+            )
+
+    def get_open_positions(self) -> OpenPositionsResponse:
+        """
+        Get all open positions for this account
+
+        Returns:
+            OpenPositionsResponse with list of positions
+        """
+        try:
+            if not self.initialized:
+                self.initialize()
+
+            account_info = self.get_account_info()
+            if not account_info:
+                return OpenPositionsResponse(
+                    account_number=0,
+                    positions=[],
+                    total_profit=0.0,
+                    position_count=0
+                )
+
+            # Get all positions
+            positions = mt5.positions_get()
+            if positions is None:
+                return OpenPositionsResponse(
+                    account_number=account_info.account_number,
+                    positions=[],
+                    total_profit=0.0,
+                    position_count=0
+                )
+
+            # Convert to OpenPosition objects
+            open_positions = []
+            total_profit = 0.0
+
+            for pos in positions:
+                # Get current price
+                tick = mt5.symbol_info_tick(pos.symbol)
+                current_price = tick.bid if pos.type == mt5.POSITION_TYPE_BUY else tick.ask if tick else pos.price_current
+
+                position_type = "BUY" if pos.type == mt5.POSITION_TYPE_BUY else "SELL"
+
+                open_position = OpenPosition(
+                    ticket=pos.ticket,
+                    symbol=pos.symbol,
+                    type=position_type,
+                    volume=pos.volume,
+                    open_price=pos.price_open,
+                    current_price=current_price,
+                    sl=pos.sl if pos.sl > 0 else None,
+                    tp=pos.tp if pos.tp > 0 else None,
+                    profit=pos.profit,
+                    swap=pos.swap,
+                    open_time=datetime.fromtimestamp(pos.time)
+                )
+
+                open_positions.append(open_position)
+                total_profit += pos.profit
+
+            return OpenPositionsResponse(
+                account_number=account_info.account_number,
+                positions=open_positions,
+                total_profit=round(total_profit, 2),
+                position_count=len(open_positions)
+            )
+
+        except Exception as e:
+            logger.error(f"Error getting open positions: {str(e)}")
+            return OpenPositionsResponse(
+                account_number=0,
+                positions=[],
+                total_profit=0.0,
+                position_count=0
+            )

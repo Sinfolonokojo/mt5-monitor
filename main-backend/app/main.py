@@ -1,7 +1,9 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 import logging
 from datetime import datetime
+import httpx
 from .config import settings
 from .aggregator import data_aggregator
 from .cache import cache
@@ -10,6 +12,7 @@ from .vs_manager import vs_manager
 from .google_sheets_service import google_sheets_service
 from .trade_cache_manager import trade_cache_manager
 from .account_vps_cache import account_vps_cache
+from .trade_logger import trade_logger
 from .models import AggregatedResponse, VPSAgentStatus, AccountData, PhaseUpdateRequest, VSUpdateRequest, TradeHistoryResponse
 from .utils import setup_logging
 from typing import List
@@ -32,6 +35,20 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# Trading safety middleware
+@app.middleware("http")
+async def trading_safety_middleware(request: Request, call_next):
+    """Block trading requests when trading is disabled"""
+    if request.url.path.startswith("/api/accounts/") and "/trade/" in request.url.path:
+        if not settings.TRADING_ENABLED:
+            return JSONResponse(
+                status_code=503,
+                content={"detail": "Trading is currently disabled. Set TRADING_ENABLED=true in .env to enable."}
+            )
+    response = await call_next(request)
+    return response
 
 
 @app.get("/")
@@ -320,6 +337,353 @@ async def sync_trade_history_to_sheets(account_number: int):
     except Exception as e:
         logger.error(f"Error syncing trade history to Google Sheets: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# Trading Endpoints (Proxy to VPS Agents)
+
+@app.post("/api/accounts/{account_number}/trade/open")
+async def proxy_open_position(account_number: int, request: dict):
+    """
+    Open a new position on the specified account (proxied to VPS agent)
+
+    Args:
+        account_number: MT5 account number
+        request: OpenPositionRequest data (symbol, lot, order_type, sl, tp, comment)
+
+    Returns:
+        OpenPositionResponse from VPS agent
+    """
+    transaction_id = None
+    try:
+        # Log trade request
+        transaction_id = trade_logger.log_trade_request(
+            operation="OPEN_POSITION",
+            account_number=account_number,
+            request_data=request
+        )
+
+        # Find target VPS agent - cache stores the VPS source name (e.g., "VPS1-FundedNext")
+        vps_source = account_vps_cache.get(account_number)
+
+        if not vps_source:
+            # Cache miss - refresh cache
+            logger.info(f"VPS source not in cache for account {account_number}, fetching from agents")
+            await data_aggregator.fetch_all_agents()
+            vps_source = account_vps_cache.get(account_number)
+
+            if not vps_source:
+                error_msg = f"Account {account_number} not found in any VPS agent"
+                trade_logger.log_trade_error(transaction_id, "OPEN_POSITION", account_number, error_msg)
+                raise HTTPException(status_code=404, detail=error_msg)
+
+        # Get VPS agent config by matching the name
+        agent_config = None
+        for agent in settings.VPS_AGENTS:
+            if agent.get("name") == vps_source:
+                agent_config = agent
+                break
+
+        if not agent_config:
+            error_msg = f"VPS agent configuration not found for {vps_source}. Add it to VPS_AGENTS_JSON in .env"
+            trade_logger.log_trade_error(transaction_id, "OPEN_POSITION", account_number, error_msg)
+            raise HTTPException(status_code=500, detail=error_msg)
+
+        # Get the URL from the agent config
+        vps_url = agent_config["url"]
+
+        # Forward request to VPS agent
+        logger.info(f"Forwarding open position request for account {account_number} to {vps_url} ({vps_source})")
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                f"{vps_url}/positions/open",
+                json=request
+            )
+
+            if response.status_code != 200:
+                error_msg = f"VPS agent returned error: {response.text}"
+                trade_logger.log_trade_error(transaction_id, "OPEN_POSITION", account_number, error_msg)
+                raise HTTPException(status_code=response.status_code, detail=error_msg)
+
+            result = response.json()
+
+            # Log trade response
+            trade_logger.log_trade_response(
+                transaction_id=transaction_id,
+                operation="OPEN_POSITION",
+                account_number=account_number,
+                response_data=result,
+                success=result.get("success", False)
+            )
+
+            # Clear cache after successful trade to ensure fresh data
+            if result.get("success"):
+                cache.clear()
+                account_vps_cache.clear()
+                logger.info("Cache cleared after successful trade")
+
+            return result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        error_msg = f"Error opening position: {str(e)}"
+        if transaction_id:
+            trade_logger.log_trade_error(transaction_id, "OPEN_POSITION", account_number, error_msg)
+        logger.error(error_msg)
+        raise HTTPException(status_code=500, detail=error_msg)
+
+
+@app.post("/api/accounts/{account_number}/trade/close")
+async def proxy_close_position(account_number: int, request: dict):
+    """
+    Close an existing position on the specified account (proxied to VPS agent)
+
+    Args:
+        account_number: MT5 account number
+        request: ClosePositionRequest data (ticket, deviation)
+
+    Returns:
+        ClosePositionResponse from VPS agent
+    """
+    transaction_id = None
+    try:
+        # Log trade request
+        transaction_id = trade_logger.log_trade_request(
+            operation="CLOSE_POSITION",
+            account_number=account_number,
+            request_data=request
+        )
+
+        # Find target VPS agent - cache stores the VPS source name
+        vps_source = account_vps_cache.get(account_number)
+
+        if not vps_source:
+            # Cache miss - refresh cache
+            logger.info(f"VPS source not in cache for account {account_number}, fetching from agents")
+            await data_aggregator.fetch_all_agents()
+            vps_source = account_vps_cache.get(account_number)
+
+            if not vps_source:
+                error_msg = f"Account {account_number} not found in any VPS agent"
+                trade_logger.log_trade_error(transaction_id, "CLOSE_POSITION", account_number, error_msg)
+                raise HTTPException(status_code=404, detail=error_msg)
+
+        # Get VPS agent config by matching the name
+        agent_config = None
+        for agent in settings.VPS_AGENTS:
+            if agent.get("name") == vps_source:
+                agent_config = agent
+                break
+
+        if not agent_config:
+            error_msg = f"VPS agent configuration not found for {vps_source}. Add it to VPS_AGENTS_JSON in .env"
+            trade_logger.log_trade_error(transaction_id, "CLOSE_POSITION", account_number, error_msg)
+            raise HTTPException(status_code=500, detail=error_msg)
+
+        # Get the URL from the agent config
+        vps_url = agent_config["url"]
+
+        # Forward request to VPS agent
+        logger.info(f"Forwarding close position request for account {account_number} to {vps_url} ({vps_source})")
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                f"{vps_url}/positions/close",
+                json=request
+            )
+
+            if response.status_code != 200:
+                error_msg = f"VPS agent returned error: {response.text}"
+                trade_logger.log_trade_error(transaction_id, "CLOSE_POSITION", account_number, error_msg)
+                raise HTTPException(status_code=response.status_code, detail=error_msg)
+
+            result = response.json()
+
+            # Log trade response
+            trade_logger.log_trade_response(
+                transaction_id=transaction_id,
+                operation="CLOSE_POSITION",
+                account_number=account_number,
+                response_data=result,
+                success=result.get("success", False)
+            )
+
+            # Clear cache after successful trade to ensure fresh data
+            if result.get("success"):
+                cache.clear()
+                account_vps_cache.clear()
+                logger.info("Cache cleared after successful trade")
+
+            return result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        error_msg = f"Error closing position: {str(e)}"
+        if transaction_id:
+            trade_logger.log_trade_error(transaction_id, "CLOSE_POSITION", account_number, error_msg)
+        logger.error(error_msg)
+        raise HTTPException(status_code=500, detail=error_msg)
+
+
+@app.put("/api/accounts/{account_number}/trade/modify")
+async def proxy_modify_position(account_number: int, request: dict):
+    """
+    Modify SL/TP on an existing position (proxied to VPS agent)
+
+    Args:
+        account_number: MT5 account number
+        request: ModifyPositionRequest data (ticket, sl, tp)
+
+    Returns:
+        ModifyPositionResponse from VPS agent
+    """
+    transaction_id = None
+    try:
+        # Log trade request
+        transaction_id = trade_logger.log_trade_request(
+            operation="MODIFY_POSITION",
+            account_number=account_number,
+            request_data=request
+        )
+
+        # Find target VPS agent - cache stores the VPS source name
+        vps_source = account_vps_cache.get(account_number)
+
+        if not vps_source:
+            # Cache miss - refresh cache
+            logger.info(f"VPS source not in cache for account {account_number}, fetching from agents")
+            await data_aggregator.fetch_all_agents()
+            vps_source = account_vps_cache.get(account_number)
+
+            if not vps_source:
+                error_msg = f"Account {account_number} not found in any VPS agent"
+                trade_logger.log_trade_error(transaction_id, "MODIFY_POSITION", account_number, error_msg)
+                raise HTTPException(status_code=404, detail=error_msg)
+
+        # Get VPS agent config by matching the name
+        agent_config = None
+        for agent in settings.VPS_AGENTS:
+            if agent.get("name") == vps_source:
+                agent_config = agent
+                break
+
+        if not agent_config:
+            error_msg = f"VPS agent configuration not found for {vps_source}. Add it to VPS_AGENTS_JSON in .env"
+            trade_logger.log_trade_error(transaction_id, "MODIFY_POSITION", account_number, error_msg)
+            raise HTTPException(status_code=500, detail=error_msg)
+
+        # Get the URL from the agent config
+        vps_url = agent_config["url"]
+
+        # Forward request to VPS agent
+        logger.info(f"Forwarding modify position request for account {account_number} to {vps_url} ({vps_source})")
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.put(
+                f"{vps_url}/positions/modify",
+                json=request
+            )
+
+            if response.status_code != 200:
+                error_msg = f"VPS agent returned error: {response.text}"
+                trade_logger.log_trade_error(transaction_id, "MODIFY_POSITION", account_number, error_msg)
+                raise HTTPException(status_code=response.status_code, detail=error_msg)
+
+            result = response.json()
+
+            # Log trade response
+            trade_logger.log_trade_response(
+                transaction_id=transaction_id,
+                operation="MODIFY_POSITION",
+                account_number=account_number,
+                response_data=result,
+                success=result.get("success", False)
+            )
+
+            # Clear cache after successful trade to ensure fresh data
+            if result.get("success"):
+                cache.clear()
+                account_vps_cache.clear()
+                logger.info("Cache cleared after successful trade")
+
+            return result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        error_msg = f"Error modifying position: {str(e)}"
+        if transaction_id:
+            trade_logger.log_trade_error(transaction_id, "MODIFY_POSITION", account_number, error_msg)
+        logger.error(error_msg)
+        raise HTTPException(status_code=500, detail=error_msg)
+
+
+@app.get("/api/accounts/{account_number}/positions")
+async def get_account_positions(account_number: int):
+    """
+    Get all open positions for the specified account (proxied to VPS agent)
+
+    Args:
+        account_number: MT5 account number
+
+    Returns:
+        OpenPositionsResponse from VPS agent
+    """
+    try:
+        # Find target VPS agent - cache stores the VPS source name
+        vps_source = account_vps_cache.get(account_number)
+
+        if not vps_source:
+            # Cache miss - refresh cache
+            logger.info(f"VPS source not in cache for account {account_number}, fetching from agents")
+            await data_aggregator.fetch_all_agents()
+            vps_source = account_vps_cache.get(account_number)
+
+            if not vps_source:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Account {account_number} not found in any VPS agent"
+                )
+
+        # Get VPS agent config by matching the name
+        agent_config = None
+        for agent in settings.VPS_AGENTS:
+            if agent.get("name") == vps_source:
+                agent_config = agent
+                break
+
+        if not agent_config:
+            raise HTTPException(
+                status_code=500,
+                detail=f"VPS agent configuration not found for {vps_source}. Add it to VPS_AGENTS_JSON in .env"
+            )
+
+        # Get the URL from the agent config
+        vps_url = agent_config["url"]
+
+        # Forward request to VPS agent
+        logger.info(f"Fetching open positions for account {account_number} from {vps_url} ({vps_source})")
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.get(f"{vps_url}/positions")
+
+            if response.status_code != 200:
+                raise HTTPException(
+                    status_code=response.status_code,
+                    detail=f"VPS agent returned error: {response.text}"
+                )
+
+            result = response.json()
+            logger.info(f"Found {result.get('position_count', 0)} open positions for account {account_number}")
+            return result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching positions: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch positions: {str(e)}")
 
 
 def build_response(accounts: List[AccountData]) -> AggregatedResponse:

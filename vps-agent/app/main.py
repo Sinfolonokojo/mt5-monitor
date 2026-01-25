@@ -5,7 +5,12 @@ import logging
 import asyncio
 from .config import settings
 from .mt5_service import MT5Service
-from .models import AccountResponse, AgentHealthResponse, TradeHistoryResponse
+from .models import (
+    AccountResponse, AgentHealthResponse, TradeHistoryResponse,
+    OpenPositionRequest, OpenPositionResponse, ClosePositionRequest,
+    ClosePositionResponse, ModifyPositionRequest, ModifyPositionResponse,
+    OpenPositionsResponse
+)
 from .utils import setup_logging
 from datetime import datetime
 
@@ -190,3 +195,112 @@ async def get_trade_history(from_date: str = None, days: int = None):
     except Exception as e:
         logger.error(f"Error fetching trade history: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to fetch trade history: {str(e)}")
+
+
+# Trading Endpoints
+
+@app.post("/positions/open", response_model=OpenPositionResponse)
+async def open_position(request: OpenPositionRequest):
+    """
+    Open a new market position
+
+    Args:
+        request: OpenPositionRequest with trade parameters (symbol, lot, order_type, sl, tp, comment)
+
+    Returns:
+        OpenPositionResponse with result
+    """
+    try:
+        logger.info(f"Opening position: {request.symbol} {request.order_type} {request.lot} lots")
+        response = mt5_service.open_position(request)
+
+        if not response.success:
+            logger.error(f"Failed to open position: {response.message}")
+            raise HTTPException(status_code=400, detail=response.message)
+
+        logger.info(f"✅ Position opened successfully: Ticket {response.ticket}")
+        return response
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error opening position: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to open position: {str(e)}")
+
+
+@app.post("/positions/close", response_model=ClosePositionResponse)
+async def close_position(request: ClosePositionRequest):
+    """
+    Close an existing position
+
+    Args:
+        request: ClosePositionRequest with ticket number
+
+    Returns:
+        ClosePositionResponse with result
+    """
+    try:
+        logger.info(f"Closing position: Ticket {request.ticket}")
+        response = mt5_service.close_position(request)
+
+        if not response.success:
+            logger.error(f"Failed to close position: {response.message}")
+            raise HTTPException(status_code=400, detail=response.message)
+
+        logger.info(f"✅ Position closed successfully: Ticket {response.ticket}")
+        return response
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error closing position: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to close position: {str(e)}")
+
+
+@app.put("/positions/modify", response_model=ModifyPositionResponse)
+async def modify_position(request: ModifyPositionRequest):
+    """
+    Modify SL/TP on an existing position
+
+    Args:
+        request: ModifyPositionRequest with ticket and new SL/TP values
+
+    Returns:
+        ModifyPositionResponse with result
+    """
+    try:
+        logger.info(f"Modifying position: Ticket {request.ticket}, SL={request.sl}, TP={request.tp}")
+        response = mt5_service.modify_position(request)
+
+        if not response.success:
+            logger.error(f"Failed to modify position: {response.message}")
+            raise HTTPException(status_code=400, detail=response.message)
+
+        logger.info(f"✅ Position modified successfully: Ticket {response.ticket}")
+        return response
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error modifying position: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to modify position: {str(e)}")
+
+
+@app.get("/positions", response_model=OpenPositionsResponse)
+async def get_open_positions():
+    """
+    Get all open positions for this account
+
+    Returns:
+        OpenPositionsResponse with list of open positions
+    """
+    try:
+        logger.info(f"Fetching open positions for {settings.ACCOUNT_DISPLAY_NAME}")
+        response = mt5_service.get_open_positions()
+
+        logger.info(f"Successfully fetched {response.position_count} open positions")
+        return response
+
+    except Exception as e:
+        logger.error(f"Error fetching open positions: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch open positions: {str(e)}")

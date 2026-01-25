@@ -67,3 +67,77 @@ class TradeHistoryResponse(BaseModel):
     total_trades: int
     total_profit: float
     total_commission: float
+
+
+# Trading Models
+
+class OpenPositionRequest(BaseModel):
+    """Request to open a new position"""
+    symbol: str
+    lot: float
+    order_type: str  # "BUY" or "SELL"
+    sl: Optional[float] = None
+    tp: Optional[float] = None
+    comment: Optional[str] = "MT5Monitor"
+
+
+class ClosePositionRequest(BaseModel):
+    """Request to close an existing position"""
+    ticket: int
+    deviation: Optional[int] = 20
+
+
+class ModifyPositionRequest(BaseModel):
+    """Request to modify SL/TP on an existing position"""
+    ticket: int
+    sl: Optional[float] = None
+    tp: Optional[float] = None
+
+
+class OpenPositionResponse(BaseModel):
+    """Response after opening a position"""
+    success: bool
+    ticket: Optional[int] = None
+    message: str
+    price: Optional[float] = None
+    error_code: Optional[int] = None
+
+
+class ClosePositionResponse(BaseModel):
+    """Response after closing a position"""
+    success: bool
+    ticket: int
+    message: str
+    close_price: Optional[float] = None
+
+
+class ModifyPositionResponse(BaseModel):
+    """Response after modifying a position"""
+    success: bool
+    ticket: int
+    message: str
+    new_sl: Optional[float] = None
+    new_tp: Optional[float] = None
+
+
+class OpenPosition(BaseModel):
+    """Represents an open position"""
+    ticket: int
+    symbol: str
+    type: str  # "BUY" or "SELL"
+    volume: float
+    open_price: float
+    current_price: float
+    sl: Optional[float] = None
+    tp: Optional[float] = None
+    profit: float
+    swap: float
+    open_time: datetime
+
+
+class OpenPositionsResponse(BaseModel):
+    """Response containing all open positions for an account"""
+    account_number: int
+    positions: list[OpenPosition]
+    total_profit: float
+    position_count: int

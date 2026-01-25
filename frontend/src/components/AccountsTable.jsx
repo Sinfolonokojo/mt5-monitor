@@ -6,12 +6,16 @@ import LoadingSpinner from './LoadingSpinner';
 import ErrorMessage from './ErrorMessage';
 import AccountDetailsModal from './AccountDetailsModal';
 import TradeHistoryModal from './TradeHistoryModal';
+import TradeModal from './TradeModal';
+import OpenPositionsModal from './OpenPositionsModal';
 import apiService from '../services/api';
 
 const AccountsTable = ({ data, loading, error, onRefresh, editMode, onPhaseUpdate, onVSUpdate }) => {
   const [sortMode, setSortMode] = useState('VS'); // 'VS', 'PL_DESC', 'PL_ASC', 'HOLDER_ASC', 'HOLDER_DESC'
   const [selectedAccount, setSelectedAccount] = useState(null);
   const [tradeHistoryAccount, setTradeHistoryAccount] = useState(null);
+  const [tradeModalAccount, setTradeModalAccount] = useState(null);
+  const [positionsModalAccount, setPositionsModalAccount] = useState(null);
   const [openTradeFilter, setOpenTradeFilter] = useState('all'); // 'all', 'with_open', 'without_open'
   const [isMobile, setIsMobile] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
@@ -635,6 +639,14 @@ const AccountsTable = ({ data, loading, error, onRefresh, editMode, onPhaseUpdat
             setTradeHistoryAccount(selectedAccount);
             setSelectedAccount(null);
           }}
+          onOpenTrade={(account) => {
+            setTradeModalAccount(account);
+            setSelectedAccount(null);
+          }}
+          onViewPositions={(account) => {
+            setPositionsModalAccount(account);
+            setSelectedAccount(null);
+          }}
         />
       )}
 
@@ -643,6 +655,27 @@ const AccountsTable = ({ data, loading, error, onRefresh, editMode, onPhaseUpdat
         <TradeHistoryModal
           account={tradeHistoryAccount}
           onClose={() => setTradeHistoryAccount(null)}
+        />
+      )}
+
+      {/* Trade Modal */}
+      {tradeModalAccount && (
+        <TradeModal
+          account={tradeModalAccount}
+          onClose={() => setTradeModalAccount(null)}
+          onSuccess={() => {
+            onRefresh();
+            setTradeModalAccount(null);
+          }}
+        />
+      )}
+
+      {/* Open Positions Modal */}
+      {positionsModalAccount && (
+        <OpenPositionsModal
+          account={positionsModalAccount}
+          onClose={() => setPositionsModalAccount(null)}
+          onRefresh={onRefresh}
         />
       )}
     </div>
