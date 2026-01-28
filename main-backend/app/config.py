@@ -35,6 +35,9 @@ class Settings(BaseSettings):
     TRADING_ENABLED: bool = False  # Set to True to enable trading
     DEMO_MODE_ONLY: bool = True  # Set to False to allow live trading (not implemented yet)
 
+    # Versus Feature Settings
+    VERSUS_ENABLED: bool = False  # Set to True to enable Versus hedging feature
+
     @property
     def VPS_AGENTS(self) -> List[Dict]:
         """Parse VPS agents from JSON string"""

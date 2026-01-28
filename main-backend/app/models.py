@@ -74,3 +74,47 @@ class TradeHistoryResponse(BaseModel):
     total_trades: int
     total_profit: float
     total_commission: float
+
+
+# Versus Trading Models
+from enum import Enum
+
+
+class VersusStatus(str, Enum):
+    """Status values for a Versus configuration"""
+    PENDING = "pending"
+    CONGELADO = "congelado"
+    TRANSFERIDO = "transferido"
+    COMPLETED = "completed"
+    ERROR = "error"
+
+
+class VersusConfig(BaseModel):
+    """A Versus hedging configuration"""
+    id: str
+    account_a: int
+    account_b: int
+    symbol: str
+    lots: float
+    side: str  # "BUY" or "SELL" - Account A's direction
+    tp_pips: float  # Take Profit in pips
+    sl_pips: float  # Stop Loss in pips
+    status: VersusStatus = VersusStatus.PENDING
+    created_at: datetime
+    updated_at: datetime
+    scheduled_congelar: Optional[datetime] = None  # Optional scheduled time for congelar
+    tickets_a: List[int] = []  # Trade tickets on Account A
+    tickets_b: List[int] = []  # Trade tickets on Account B
+    error_message: Optional[str] = None
+
+
+class CreateVersusRequest(BaseModel):
+    """Request to create a new Versus"""
+    account_a: int
+    account_b: int
+    symbol: str = "EURUSD"
+    lots: float
+    side: str  # "BUY" or "SELL"
+    tp_pips: float
+    sl_pips: float
+    scheduled_congelar: Optional[datetime] = None

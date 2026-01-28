@@ -9,11 +9,12 @@ from .aggregator import data_aggregator
 from .cache import cache
 from .phase_manager import phase_manager
 from .vs_manager import vs_manager
+from .versus_manager import versus_manager
 from .google_sheets_service import google_sheets_service
 from .trade_cache_manager import trade_cache_manager
 from .account_vps_cache import account_vps_cache
 from .trade_logger import trade_logger
-from .models import AggregatedResponse, VPSAgentStatus, AccountData, PhaseUpdateRequest, VSUpdateRequest, TradeHistoryResponse
+from .models import AggregatedResponse, VPSAgentStatus, AccountData, PhaseUpdateRequest, VSUpdateRequest, TradeHistoryResponse, CreateVersusRequest, VersusStatus, VersusConfig
 from .utils import setup_logging
 from typing import List
 
@@ -46,6 +47,13 @@ async def trading_safety_middleware(request: Request, call_next):
             return JSONResponse(
                 status_code=503,
                 content={"detail": "Trading is currently disabled. Set TRADING_ENABLED=true in .env to enable."}
+            )
+    # Block versus requests when versus feature is disabled
+    if request.url.path.startswith("/api/versus"):
+        if not settings.VERSUS_ENABLED:
+            return JSONResponse(
+                status_code=503,
+                content={"detail": "Versus feature is disabled. Set VERSUS_ENABLED=true in .env to enable."}
             )
     response = await call_next(request)
     return response
@@ -793,6 +801,427 @@ async def get_account_positions(account_number: int):
     except Exception as e:
         logger.error(f"Error fetching positions: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to fetch positions: {str(e)}")
+
+
+# Versus Trading Endpoints
+
+@app.get("/api/versus")
+async def get_all_versus():
+    """Get all Versus configurations"""
+    try:
+        configs = versus_manager.get_all()
+        return {"versus_list": configs, "count": len(configs)}
+    except Exception as e:
+        logger.error(f"Error fetching Versus list: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/versus/feature-status")
+async def get_versus_feature_status():
+    """Get whether the Versus feature is enabled (for frontend)"""
+    return {"enabled": settings.VERSUS_ENABLED}
+
+
+@app.post("/api/versus")
+async def create_versus(request: CreateVersusRequest):
+    """Create a new Versus configuration"""
+    try:
+        # Validate accounts exist
+        if request.account_a == request.account_b:
+            raise HTTPException(status_code=400, detail="Account A and Account B must be different")
+
+        if request.lots <= 0:
+            raise HTTPException(status_code=400, detail="Lots must be greater than 0")
+
+        if request.side.upper() not in ["BUY", "SELL"]:
+            raise HTTPException(status_code=400, detail="Side must be BUY or SELL")
+
+        config = versus_manager.create(
+            account_a=request.account_a,
+            account_b=request.account_b,
+            symbol=request.symbol,
+            lots=request.lots,
+            side=request.side,
+            tp_pips=request.tp_pips,
+            sl_pips=request.sl_pips,
+            scheduled_congelar=request.scheduled_congelar
+        )
+
+        return {"status": "success", "versus": config}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating Versus: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/versus/{versus_id}")
+async def delete_versus(versus_id: str):
+    """Delete/cancel a Versus configuration"""
+    try:
+        config = versus_manager.get(versus_id)
+        if not config:
+            raise HTTPException(status_code=404, detail=f"Versus {versus_id} not found")
+
+        # Only allow deletion of pending or error status
+        if config["status"] not in [VersusStatus.PENDING.value, VersusStatus.ERROR.value]:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Cannot delete Versus in {config['status']} status. Only pending or error Versus can be deleted."
+            )
+
+        success = versus_manager.delete(versus_id)
+        if success:
+            return {"status": "success", "message": f"Versus {versus_id} deleted"}
+        else:
+            raise HTTPException(status_code=500, detail="Failed to delete Versus")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting Versus: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/versus/{versus_id}/congelar")
+async def execute_congelar(versus_id: str):
+    """
+    Execute the Congelar step:
+    1. Open BUY on Account A (X lots, no SL/TP)
+    2. Open SELL on Account A (X lots, no SL/TP)
+    3. Store tickets, set status = "congelado"
+    """
+    try:
+        config = versus_manager.get(versus_id)
+        if not config:
+            raise HTTPException(status_code=404, detail=f"Versus {versus_id} not found")
+
+        if config["status"] != VersusStatus.PENDING.value:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Cannot congelar Versus in {config['status']} status. Must be pending."
+            )
+
+        account_a = config["account_a"]
+        symbol = config["symbol"]
+        lots = config["lots"]
+
+        logger.info(f"Executing Congelar for Versus {versus_id}: Opening BUY and SELL on account {account_a}")
+
+        # Find VPS for Account A
+        vps_source = account_vps_cache.get(account_a)
+        if not vps_source:
+            await data_aggregator.fetch_all_agents()
+            vps_source = account_vps_cache.get(account_a)
+            if not vps_source:
+                raise HTTPException(status_code=404, detail=f"Account {account_a} not found in any VPS agent")
+
+        agent_config = None
+        for agent in settings.VPS_AGENTS:
+            if agent.get("name") == vps_source:
+                agent_config = agent
+                break
+
+        if not agent_config:
+            raise HTTPException(status_code=500, detail=f"VPS agent config not found for {vps_source}")
+
+        vps_url = agent_config["url"]
+        tickets_a = []
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            # Open BUY position
+            buy_request = {
+                "symbol": symbol,
+                "lot": lots,
+                "order_type": "BUY",
+                "comment": f"Versus-{versus_id}-BUY"
+            }
+            buy_response = await client.post(f"{vps_url}/positions/open", json=buy_request)
+
+            if buy_response.status_code != 200:
+                raise HTTPException(status_code=buy_response.status_code, detail=f"Failed to open BUY: {buy_response.text}")
+
+            buy_result = buy_response.json()
+            if not buy_result.get("success"):
+                raise HTTPException(status_code=500, detail=f"Failed to open BUY: {buy_result.get('message', 'Unknown error')}")
+
+            buy_ticket = buy_result.get("ticket")
+            tickets_a.append(buy_ticket)
+            logger.info(f"Versus {versus_id}: BUY opened with ticket {buy_ticket}")
+
+            # Open SELL position
+            sell_request = {
+                "symbol": symbol,
+                "lot": lots,
+                "order_type": "SELL",
+                "comment": f"Versus-{versus_id}-SELL"
+            }
+            sell_response = await client.post(f"{vps_url}/positions/open", json=sell_request)
+
+            if sell_response.status_code != 200:
+                # Rollback: close the BUY position
+                logger.error(f"Versus {versus_id}: SELL failed, rolling back BUY ticket {buy_ticket}")
+                try:
+                    await client.post(f"{vps_url}/positions/close", json={"ticket": buy_ticket})
+                except Exception as rollback_error:
+                    logger.error(f"Rollback failed: {rollback_error}")
+                raise HTTPException(status_code=sell_response.status_code, detail=f"Failed to open SELL: {sell_response.text}")
+
+            sell_result = sell_response.json()
+            if not sell_result.get("success"):
+                # Rollback: close the BUY position
+                logger.error(f"Versus {versus_id}: SELL failed, rolling back BUY ticket {buy_ticket}")
+                try:
+                    await client.post(f"{vps_url}/positions/close", json={"ticket": buy_ticket})
+                except Exception as rollback_error:
+                    logger.error(f"Rollback failed: {rollback_error}")
+                raise HTTPException(status_code=500, detail=f"Failed to open SELL: {sell_result.get('message', 'Unknown error')}")
+
+            sell_ticket = sell_result.get("ticket")
+            tickets_a.append(sell_ticket)
+            logger.info(f"Versus {versus_id}: SELL opened with ticket {sell_ticket}")
+
+        # Update status to congelado
+        updated_config = versus_manager.update_status(
+            versus_id,
+            VersusStatus.CONGELADO,
+            tickets_a=tickets_a
+        )
+
+        # Clear cache for account A
+        invalidate_account_cache(account_a)
+
+        return {
+            "status": "success",
+            "message": f"Congelado: BUY and SELL opened on Account A",
+            "versus": updated_config,
+            "tickets": tickets_a
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error executing Congelar: {str(e)}")
+        versus_manager.update_status(versus_id, VersusStatus.ERROR, error_message=str(e))
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/versus/{versus_id}/transferir")
+async def execute_transferir(versus_id: str):
+    """
+    Execute the Transferir step:
+    1. Close opposite trade on Account A (if side=BUY, close SELL ticket)
+    2. Modify remaining trade on Account A with TP and SL (price-based)
+    3. Open 2 trades on Account B (opposite direction, X/2 lots each)
+       - TP = Account A's SL (mirrored)
+       - SL = Account A's TP (mirrored)
+    4. Store tickets, set status = "transferido"
+    """
+    try:
+        config = versus_manager.get(versus_id)
+        if not config:
+            raise HTTPException(status_code=404, detail=f"Versus {versus_id} not found")
+
+        if config["status"] != VersusStatus.CONGELADO.value:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Cannot transferir Versus in {config['status']} status. Must be congelado."
+            )
+
+        account_a = config["account_a"]
+        account_b = config["account_b"]
+        symbol = config["symbol"]
+        lots = config["lots"]
+        side = config["side"]  # Account A's direction
+        tp_pips = config["tp_pips"]
+        sl_pips = config["sl_pips"]
+        tickets_a = config["tickets_a"]
+
+        if len(tickets_a) != 2:
+            raise HTTPException(status_code=400, detail=f"Expected 2 tickets on Account A, found {len(tickets_a)}")
+
+        logger.info(f"Executing Transferir for Versus {versus_id}")
+
+        # Find VPS for accounts
+        vps_a = account_vps_cache.get(account_a)
+        vps_b = account_vps_cache.get(account_b)
+
+        if not vps_a or not vps_b:
+            await data_aggregator.fetch_all_agents()
+            vps_a = account_vps_cache.get(account_a)
+            vps_b = account_vps_cache.get(account_b)
+
+        if not vps_a:
+            raise HTTPException(status_code=404, detail=f"Account {account_a} not found")
+        if not vps_b:
+            raise HTTPException(status_code=404, detail=f"Account {account_b} not found")
+
+        # Get VPS configs
+        agent_config_a = None
+        agent_config_b = None
+        for agent in settings.VPS_AGENTS:
+            if agent.get("name") == vps_a:
+                agent_config_a = agent
+            if agent.get("name") == vps_b:
+                agent_config_b = agent
+
+        if not agent_config_a:
+            raise HTTPException(status_code=500, detail=f"VPS config not found for {vps_a}")
+        if not agent_config_b:
+            raise HTTPException(status_code=500, detail=f"VPS config not found for {vps_b}")
+
+        vps_url_a = agent_config_a["url"]
+        vps_url_b = agent_config_b["url"]
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            # First, get open positions on Account A to identify which ticket is which
+            positions_response = await client.get(f"{vps_url_a}/positions")
+            if positions_response.status_code != 200:
+                raise HTTPException(status_code=500, detail="Failed to get positions from Account A")
+
+            positions_data = positions_response.json()
+            positions = positions_data.get("positions", [])
+
+            # Find our tickets and their details
+            buy_ticket = None
+            sell_ticket = None
+            current_price = None
+
+            for pos in positions:
+                if pos.get("ticket") in tickets_a:
+                    if pos.get("type") == "BUY":
+                        buy_ticket = pos.get("ticket")
+                        current_price = pos.get("price_current")
+                    elif pos.get("type") == "SELL":
+                        sell_ticket = pos.get("ticket")
+                        if current_price is None:
+                            current_price = pos.get("price_current")
+
+            if buy_ticket is None or sell_ticket is None:
+                raise HTTPException(status_code=400, detail="Could not identify BUY and SELL tickets on Account A")
+
+            if current_price is None:
+                raise HTTPException(status_code=400, detail="Could not determine current price")
+
+            # Determine pip value (for forex pairs, typically 0.0001 for most, 0.01 for JPY pairs)
+            pip_value = 0.01 if "JPY" in symbol.upper() else 0.0001
+
+            # Calculate TP and SL prices based on side
+            if side == "BUY":
+                # Account A keeps BUY, close SELL
+                ticket_to_close = sell_ticket
+                remaining_ticket = buy_ticket
+                # For BUY: TP is above current, SL is below
+                tp_price_a = current_price + (tp_pips * pip_value)
+                sl_price_a = current_price - (sl_pips * pip_value)
+                # Account B opens SELL (opposite), mirrored TP/SL
+                opposite_side = "SELL"
+                tp_price_b = sl_price_a  # B's TP is A's SL
+                sl_price_b = tp_price_a  # B's SL is A's TP
+            else:  # SELL
+                # Account A keeps SELL, close BUY
+                ticket_to_close = buy_ticket
+                remaining_ticket = sell_ticket
+                # For SELL: TP is below current, SL is above
+                tp_price_a = current_price - (tp_pips * pip_value)
+                sl_price_a = current_price + (sl_pips * pip_value)
+                # Account B opens BUY (opposite), mirrored TP/SL
+                opposite_side = "BUY"
+                tp_price_b = sl_price_a  # B's TP is A's SL
+                sl_price_b = tp_price_a  # B's SL is A's TP
+
+            # Round prices to 5 decimal places (or 3 for JPY pairs)
+            decimals = 3 if "JPY" in symbol.upper() else 5
+            tp_price_a = round(tp_price_a, decimals)
+            sl_price_a = round(sl_price_a, decimals)
+            tp_price_b = round(tp_price_b, decimals)
+            sl_price_b = round(sl_price_b, decimals)
+
+            logger.info(f"Versus {versus_id}: Closing ticket {ticket_to_close}, keeping {remaining_ticket}")
+            logger.info(f"Account A TP: {tp_price_a}, SL: {sl_price_a}")
+            logger.info(f"Account B (2x {lots/2} lots {opposite_side}) TP: {tp_price_b}, SL: {sl_price_b}")
+
+            # Step 1: Close opposite trade on Account A
+            close_response = await client.post(f"{vps_url_a}/positions/close", json={"ticket": ticket_to_close})
+            if close_response.status_code != 200:
+                raise HTTPException(status_code=500, detail=f"Failed to close opposite position: {close_response.text}")
+
+            close_result = close_response.json()
+            if not close_result.get("success"):
+                raise HTTPException(status_code=500, detail=f"Failed to close position: {close_result.get('message')}")
+
+            logger.info(f"Versus {versus_id}: Closed ticket {ticket_to_close}")
+
+            # Step 2: Modify remaining trade on Account A with TP and SL
+            modify_response = await client.put(f"{vps_url_a}/positions/modify", json={
+                "ticket": remaining_ticket,
+                "tp": tp_price_a,
+                "sl": sl_price_a
+            })
+            if modify_response.status_code != 200:
+                logger.warning(f"Failed to modify position: {modify_response.text}")
+                # Continue anyway - position is open, just without SL/TP
+
+            # Step 3: Open 2 trades on Account B
+            half_lots = round(lots / 2, 2)
+            tickets_b = []
+
+            for i in range(2):
+                open_b_request = {
+                    "symbol": symbol,
+                    "lot": half_lots,
+                    "order_type": opposite_side,
+                    "tp": tp_price_b,
+                    "sl": sl_price_b,
+                    "comment": f"Versus-{versus_id}-B{i+1}"
+                }
+                open_b_response = await client.post(f"{vps_url_b}/positions/open", json=open_b_request)
+
+                if open_b_response.status_code != 200:
+                    versus_manager.update_status(versus_id, VersusStatus.ERROR,
+                        error_message=f"Failed to open trade {i+1} on Account B")
+                    raise HTTPException(status_code=500, detail=f"Failed to open trade on Account B: {open_b_response.text}")
+
+                open_b_result = open_b_response.json()
+                if not open_b_result.get("success"):
+                    versus_manager.update_status(versus_id, VersusStatus.ERROR,
+                        error_message=f"Failed to open trade {i+1} on Account B: {open_b_result.get('message')}")
+                    raise HTTPException(status_code=500, detail=f"Failed to open trade on Account B")
+
+                tickets_b.append(open_b_result.get("ticket"))
+                logger.info(f"Versus {versus_id}: Opened {opposite_side} on Account B with ticket {open_b_result.get('ticket')}")
+
+        # Update status to transferido
+        updated_config = versus_manager.update_status(
+            versus_id,
+            VersusStatus.TRANSFERIDO,
+            tickets_a=[remaining_ticket],
+            tickets_b=tickets_b
+        )
+
+        # Clear cache for both accounts
+        invalidate_account_cache(account_a)
+        invalidate_account_cache(account_b)
+
+        return {
+            "status": "success",
+            "message": f"Transferido: Account A has 1 {side} trade, Account B has 2 {opposite_side} trades",
+            "versus": updated_config,
+            "account_a_ticket": remaining_ticket,
+            "account_b_tickets": tickets_b,
+            "prices": {
+                "account_a": {"tp": tp_price_a, "sl": sl_price_a},
+                "account_b": {"tp": tp_price_b, "sl": sl_price_b}
+            }
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error executing Transferir: {str(e)}")
+        versus_manager.update_status(versus_id, VersusStatus.ERROR, error_message=str(e))
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 def build_response(accounts: List[AccountData]) -> AggregatedResponse:

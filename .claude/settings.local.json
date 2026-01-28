@@ -33,7 +33,10 @@
       "Bash(gh pr create:*)",
       "Bash(git fetch:*)",
       "Bash(npm run build:*)",
-      "Bash(curl http://178.18.247.182:8001/accounts)"
+      "Bash(curl http://178.18.247.182:8001/accounts)",
+      "Bash(git stash:*)",
+      "Bash(echo:*)",
+      "Bash(echo \"net start \"\"MT5 Main Backend\"\"\")"
     ]
   }
 }
