@@ -864,11 +864,11 @@ async def delete_versus(versus_id: str):
         if not config:
             raise HTTPException(status_code=404, detail=f"Versus {versus_id} not found")
 
-        # Only allow deletion of pending or error status
-        if config["status"] not in [VersusStatus.PENDING.value, VersusStatus.ERROR.value]:
+        # Only allow deletion of pending, congelado, or error status
+        if config["status"] not in [VersusStatus.PENDING.value, VersusStatus.CONGELADO.value, VersusStatus.ERROR.value]:
             raise HTTPException(
                 status_code=400,
-                detail=f"Cannot delete Versus in {config['status']} status. Only pending or error Versus can be deleted."
+                detail=f"Cannot delete Versus in {config['status']} status. Only pending, congelado, or error Versus can be deleted."
             )
 
         success = versus_manager.delete(versus_id)
@@ -1092,11 +1092,11 @@ async def execute_transferir(versus_id: str):
                 if pos.get("ticket") in tickets_a:
                     if pos.get("type") == "BUY":
                         buy_ticket = pos.get("ticket")
-                        current_price = pos.get("price_current")
+                        current_price = pos.get("current_price")
                     elif pos.get("type") == "SELL":
                         sell_ticket = pos.get("ticket")
                         if current_price is None:
-                            current_price = pos.get("price_current")
+                            current_price = pos.get("current_price")
 
             if buy_ticket is None or sell_ticket is None:
                 raise HTTPException(status_code=400, detail="Could not identify BUY and SELL tickets on Account A")

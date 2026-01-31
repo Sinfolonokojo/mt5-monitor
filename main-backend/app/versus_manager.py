@@ -139,12 +139,16 @@ class VersusManager:
     def get_pending_scheduled(self) -> List[dict]:
         """Get all pending Versus configs with scheduled_congelar time that has passed"""
         with self.lock:
-            now = datetime.now()
+            now = datetime.utcnow()
             pending = []
             for config in self.versus_configs.values():
                 if (config["status"] == VersusStatus.PENDING.value and
                     config.get("scheduled_congelar")):
-                    scheduled_time = datetime.fromisoformat(config["scheduled_congelar"])
+                    scheduled_str = config["scheduled_congelar"]
+                    # Remove 'Z' suffix if present and parse as UTC
+                    if scheduled_str.endswith('Z'):
+                        scheduled_str = scheduled_str[:-1]
+                    scheduled_time = datetime.fromisoformat(scheduled_str)
                     if scheduled_time <= now:
                         pending.append(config)
             return pending

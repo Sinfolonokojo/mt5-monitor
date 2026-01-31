@@ -183,12 +183,13 @@ const CreateVersusModal = ({ accounts, onClose, onCreate }) => {
                 fontSize: '14px',
                 boxSizing: 'border-box',
                 backgroundColor: 'white',
+                color: '#374151',
               }}
             >
               <option value="">Seleccionar cuenta...</option>
               {accounts.map(acc => (
                 <option key={acc.account_number} value={acc.account_number}>
-                  {acc.account_name} (#{acc.account_number})
+                  {acc.account_holder} - {acc.prop_firm || 'N/A'} (#{acc.account_number})
                 </option>
               ))}
             </select>
@@ -212,12 +213,13 @@ const CreateVersusModal = ({ accounts, onClose, onCreate }) => {
                 fontSize: '14px',
                 boxSizing: 'border-box',
                 backgroundColor: 'white',
+                color: '#374151',
               }}
             >
               <option value="">Seleccionar cuenta...</option>
               {accounts.map(acc => (
                 <option key={acc.account_number} value={acc.account_number}>
-                  {acc.account_name} (#{acc.account_number})
+                  {acc.account_holder} - {acc.prop_firm || 'N/A'} (#{acc.account_number})
                 </option>
               ))}
             </select>
