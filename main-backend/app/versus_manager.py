@@ -36,6 +36,21 @@ class VersusManager:
                     with open(self.file_path, 'r') as f:
                         self.versus_configs = json.load(f)
                     logger.info(f"Loaded {len(self.versus_configs)} Versus configs from {self.file_path}")
+
+                    # Migration: convert old tp_pips/sl_pips to new tp_pips_a/sl_pips_a format
+                    migrated = False
+                    for config in self.versus_configs.values():
+                        if "tp_pips" in config and "tp_pips_a" not in config:
+                            config["tp_pips_a"] = config.pop("tp_pips")
+                            config["sl_pips_a"] = config.pop("sl_pips")
+                            config["tp_pips_b"] = config["tp_pips_a"]  # Default B to same as A
+                            config["sl_pips_b"] = config["sl_pips_a"]
+                            migrated = True
+                            logger.info(f"Migrated Versus {config['id']} to new TP/SL schema")
+
+                    if migrated:
+                        self.save_configs()
+                        logger.info("Saved migrated Versus configs")
                 else:
                     self.versus_configs = {}
                     self.save_configs()
@@ -55,7 +70,8 @@ class VersusManager:
                 logger.error(f"Error saving Versus configs: {str(e)}")
 
     def create(self, account_a: int, account_b: int, symbol: str, lots: float,
-               side: str, tp_pips: float, sl_pips: float,
+               side: str, tp_pips_a: float, sl_pips_a: float,
+               tp_pips_b: float, sl_pips_b: float,
                scheduled_congelar: Optional[datetime] = None) -> dict:
         """
         Create a new Versus configuration.
@@ -72,8 +88,10 @@ class VersusManager:
                 "symbol": symbol.upper(),
                 "lots": lots,
                 "side": side.upper(),
-                "tp_pips": tp_pips,
-                "sl_pips": sl_pips,
+                "tp_pips_a": tp_pips_a,
+                "sl_pips_a": sl_pips_a,
+                "tp_pips_b": tp_pips_b,
+                "sl_pips_b": sl_pips_b,
                 "status": VersusStatus.PENDING.value,
                 "created_at": now,
                 "updated_at": now,
@@ -145,12 +163,25 @@ class VersusManager:
                 if (config["status"] == VersusStatus.PENDING.value and
                     config.get("scheduled_congelar")):
                     scheduled_str = config["scheduled_congelar"]
-                    # Remove 'Z' suffix if present and parse as UTC
-                    if scheduled_str.endswith('Z'):
-                        scheduled_str = scheduled_str[:-1]
-                    scheduled_time = datetime.fromisoformat(scheduled_str)
-                    if scheduled_time <= now:
-                        pending.append(config)
+                    try:
+                        # Remove 'Z' suffix if present
+                        if scheduled_str.endswith('Z'):
+                            scheduled_str = scheduled_str[:-1]
+                        # Remove timezone offset if present (e.g., +00:00)
+                        if '+' in scheduled_str:
+                            scheduled_str = scheduled_str.split('+')[0]
+                        # Handle milliseconds if present
+                        if '.' in scheduled_str:
+                            scheduled_str = scheduled_str.split('.')[0]
+                        scheduled_time = datetime.fromisoformat(scheduled_str)
+                        # Make sure it's naive (no timezone)
+                        if scheduled_time.tzinfo is not None:
+                            scheduled_time = scheduled_time.replace(tzinfo=None)
+                        logger.info(f"Versus {config['id']}: scheduled={scheduled_time} UTC, now={now} UTC, due={scheduled_time <= now}")
+                        if scheduled_time <= now:
+                            pending.append(config)
+                    except Exception as e:
+                        logger.error(f"Error parsing scheduled time for Versus {config['id']}: {scheduled_str} - {e}")
             return pending
 
 

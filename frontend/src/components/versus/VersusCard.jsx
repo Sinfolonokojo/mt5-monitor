@@ -103,12 +103,6 @@ const VersusCard = ({ versus, onCongelar, onTransferir, onCancel, loading }) => 
           <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '4px' }}>Simbolo</div>
           <div style={{ fontSize: '14px', fontWeight: '500', color: '#111827' }}>{versus.symbol}</div>
         </div>
-        <div>
-          <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '4px' }}>TP / SL (pips)</div>
-          <div style={{ fontSize: '14px', fontWeight: '500', color: '#111827' }}>
-            <span style={{ color: '#22c55e' }}>{versus.tp_pips}</span> / <span style={{ color: '#ef4444' }}>{versus.sl_pips}</span>
-          </div>
-        </div>
       </div>
 
       {/* Tickets Info */}

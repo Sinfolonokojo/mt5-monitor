@@ -1,11 +1,12 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import apiService from '../services/api';
 
-export const useVersus = () => {
+export const useVersus = (autoRefresh = true, refreshInterval = 30000) => {
   const [versusList, setVersusList] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [featureEnabled, setFeatureEnabled] = useState(false);
+  const intervalRef = useRef(null);
 
   const checkFeatureStatus = useCallback(async () => {
     try {
@@ -95,6 +96,36 @@ export const useVersus = () => {
       setLoading(false);
     }
   }, [fetchVersusList]);
+
+  // Auto-refresh: poll for updates every refreshInterval (default 30s)
+  useEffect(() => {
+    if (!autoRefresh || !featureEnabled) return;
+
+    // Check if any versus is pending with scheduled_congelar
+    const hasPendingScheduled = versusList.some(
+      v => v.status === 'pending' && v.scheduled_congelar
+    );
+
+    // Only auto-refresh if there are pending scheduled items
+    if (hasPendingScheduled) {
+      intervalRef.current = setInterval(async () => {
+        try {
+          const result = await apiService.fetchVersusList();
+          setVersusList(result.versus_list || []);
+        } catch (err) {
+          // Silent fail for background refresh
+          console.error('Auto-refresh failed:', err);
+        }
+      }, refreshInterval);
+    }
+
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+    };
+  }, [autoRefresh, featureEnabled, versusList, refreshInterval]);
 
   return {
     versusList,

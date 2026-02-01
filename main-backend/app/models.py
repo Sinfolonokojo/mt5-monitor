@@ -97,8 +97,10 @@ class VersusConfig(BaseModel):
     symbol: str
     lots: float
     side: str  # "BUY" or "SELL" - Account A's direction
-    tp_pips: float  # Take Profit in pips
-    sl_pips: float  # Stop Loss in pips
+    tp_pips_a: float  # Take Profit in pips for Account A
+    sl_pips_a: float  # Stop Loss in pips for Account A
+    tp_pips_b: float  # Take Profit in pips for Account B
+    sl_pips_b: float  # Stop Loss in pips for Account B
     status: VersusStatus = VersusStatus.PENDING
     created_at: datetime
     updated_at: datetime
@@ -115,6 +117,8 @@ class CreateVersusRequest(BaseModel):
     symbol: str = "EURUSD"
     lots: float
     side: str  # "BUY" or "SELL"
-    tp_pips: float
-    sl_pips: float
+    tp_pips_a: float  # Take Profit in pips for Account A
+    sl_pips_a: float  # Stop Loss in pips for Account A
+    tp_pips_b: float  # Take Profit in pips for Account B
+    sl_pips_b: float  # Stop Loss in pips for Account B
     scheduled_congelar: Optional[datetime] = None

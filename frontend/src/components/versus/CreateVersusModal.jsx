@@ -7,8 +7,10 @@ const CreateVersusModal = ({ accounts, onClose, onCreate }) => {
     symbol: 'EURUSD',
     side: 'BUY',
     lots: 0.01,
-    tp_pips: 50,
-    sl_pips: 50,
+    tp_pips_a: 50,
+    sl_pips_a: 50,
+    tp_pips_b: 50,
+    sl_pips_b: 50,
     scheduled_congelar: ''
   };
 
@@ -46,12 +48,20 @@ const CreateVersusModal = ({ accounts, onClose, onCreate }) => {
       setError('Los lotes deben estar entre 0.01 y 100');
       return false;
     }
-    if (formData.tp_pips <= 0) {
-      setError('Take Profit en pips debe ser mayor que 0');
+    if (formData.tp_pips_a <= 0) {
+      setError('Take Profit Cuenta A debe ser mayor que 0');
       return false;
     }
-    if (formData.sl_pips <= 0) {
-      setError('Stop Loss en pips debe ser mayor que 0');
+    if (formData.sl_pips_a <= 0) {
+      setError('Stop Loss Cuenta A debe ser mayor que 0');
+      return false;
+    }
+    if (formData.tp_pips_b <= 0) {
+      setError('Take Profit Cuenta B debe ser mayor que 0');
+      return false;
+    }
+    if (formData.sl_pips_b <= 0) {
+      setError('Stop Loss Cuenta B debe ser mayor que 0');
       return false;
     }
     return true;
@@ -71,8 +81,10 @@ const CreateVersusModal = ({ accounts, onClose, onCreate }) => {
         symbol: formData.symbol.trim().toUpperCase(),
         side: formData.side,
         lots: parseFloat(formData.lots),
-        tp_pips: parseFloat(formData.tp_pips),
-        sl_pips: parseFloat(formData.sl_pips)
+        tp_pips_a: parseFloat(formData.tp_pips_a),
+        sl_pips_a: parseFloat(formData.sl_pips_a),
+        tp_pips_b: parseFloat(formData.tp_pips_b),
+        sl_pips_b: parseFloat(formData.sl_pips_b)
       };
 
       if (formData.scheduled_congelar) {
@@ -318,7 +330,12 @@ const CreateVersusModal = ({ accounts, onClose, onCreate }) => {
             />
           </div>
 
-          {/* TP and SL in same row */}
+          {/* Account A TP/SL */}
+          <div style={{ marginBottom: '8px' }}>
+            <label style={{ fontSize: '12px', fontWeight: '600', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              Cuenta A - TP/SL (aplicado en Congelar)
+            </label>
+          </div>
           <div style={{ display: 'flex', gap: '16px', marginBottom: '20px' }}>
             <div style={{ flex: 1 }}>
               <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', color: '#374151', marginBottom: '8px' }}>
@@ -326,8 +343,8 @@ const CreateVersusModal = ({ accounts, onClose, onCreate }) => {
               </label>
               <input
                 type="number"
-                name="tp_pips"
-                value={formData.tp_pips}
+                name="tp_pips_a"
+                value={formData.tp_pips_a}
                 onChange={handleInputChange}
                 step="1"
                 min="1"
@@ -348,8 +365,61 @@ const CreateVersusModal = ({ accounts, onClose, onCreate }) => {
               </label>
               <input
                 type="number"
-                name="sl_pips"
-                value={formData.sl_pips}
+                name="sl_pips_a"
+                value={formData.sl_pips_a}
+                onChange={handleInputChange}
+                step="1"
+                min="1"
+                required
+                style={{
+                  width: '100%',
+                  padding: '10px 12px',
+                  border: '1px solid #d1d5db',
+                  borderRadius: '6px',
+                  fontSize: '14px',
+                  boxSizing: 'border-box',
+                }}
+              />
+            </div>
+          </div>
+
+          {/* Account B TP/SL */}
+          <div style={{ marginBottom: '8px' }}>
+            <label style={{ fontSize: '12px', fontWeight: '600', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              Cuenta B - TP/SL (usado en Transferir)
+            </label>
+          </div>
+          <div style={{ display: 'flex', gap: '16px', marginBottom: '20px' }}>
+            <div style={{ flex: 1 }}>
+              <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', color: '#374151', marginBottom: '8px' }}>
+                Take Profit (pips) *
+              </label>
+              <input
+                type="number"
+                name="tp_pips_b"
+                value={formData.tp_pips_b}
+                onChange={handleInputChange}
+                step="1"
+                min="1"
+                required
+                style={{
+                  width: '100%',
+                  padding: '10px 12px',
+                  border: '1px solid #d1d5db',
+                  borderRadius: '6px',
+                  fontSize: '14px',
+                  boxSizing: 'border-box',
+                }}
+              />
+            </div>
+            <div style={{ flex: 1 }}>
+              <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', color: '#374151', marginBottom: '8px' }}>
+                Stop Loss (pips) *
+              </label>
+              <input
+                type="number"
+                name="sl_pips_b"
+                value={formData.sl_pips_b}
                 onChange={handleInputChange}
                 step="1"
                 min="1"

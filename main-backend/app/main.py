@@ -1,7 +1,9 @@
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from contextlib import asynccontextmanager
 import logging
+import asyncio
 from datetime import datetime
 import httpx
 from .config import settings
@@ -22,10 +24,79 @@ from typing import List
 setup_logging(settings.LOG_LEVEL)
 logger = logging.getLogger(__name__)
 
+# Background task control
+scheduled_congelar_task = None
+shutdown_event = asyncio.Event()
+
+
+async def check_scheduled_congelar():
+    """Background task that checks for pending scheduled congelar and executes them"""
+    logger.info("Starting scheduled congelar checker (every 30 seconds)")
+
+    while not shutdown_event.is_set():
+        try:
+            await asyncio.sleep(30)  # Check every 30 seconds
+
+            if shutdown_event.is_set():
+                break
+
+            if not settings.VERSUS_ENABLED:
+                continue
+
+            # Get pending scheduled versus configs
+            pending = versus_manager.get_pending_scheduled()
+
+            if pending:
+                logger.info(f"Found {len(pending)} scheduled congelar(s) ready to execute")
+
+            for config in pending:
+                versus_id = config["id"]
+                logger.info(f"Executing scheduled Congelar for Versus {versus_id}")
+
+                try:
+                    # Execute congelar via internal call
+                    await execute_congelar_internal(versus_id)
+                    logger.info(f"Scheduled Congelar completed for Versus {versus_id}")
+                except Exception as e:
+                    logger.error(f"Failed scheduled Congelar for Versus {versus_id}: {str(e)}")
+                    versus_manager.update_status(versus_id, VersusStatus.ERROR, error_message=str(e))
+
+        except Exception as e:
+            logger.error(f"Error in scheduled congelar checker: {str(e)}")
+
+    logger.info("Scheduled congelar checker stopped")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    global scheduled_congelar_task
+
+    # Startup
+    logger.info("Starting Main Backend")
+
+    # Start background task for scheduled congelar
+    if settings.VERSUS_ENABLED:
+        scheduled_congelar_task = asyncio.create_task(check_scheduled_congelar())
+        logger.info("Scheduled congelar checker started")
+
+    yield
+
+    # Shutdown
+    logger.info("Shutting down Main Backend")
+    shutdown_event.set()
+
+    if scheduled_congelar_task:
+        try:
+            await asyncio.wait_for(scheduled_congelar_task, timeout=5.0)
+        except asyncio.TimeoutError:
+            logger.warning("Scheduled congelar task did not finish in time")
+
+
 app = FastAPI(
     title="MT5 Main Backend",
     version="1.0.0",
-    description="Aggregates MT5 account data from multiple VPS agents"
+    description="Aggregates MT5 account data from multiple VPS agents",
+    lifespan=lifespan
 )
 
 # CORS middleware
@@ -842,8 +913,10 @@ async def create_versus(request: CreateVersusRequest):
             symbol=request.symbol,
             lots=request.lots,
             side=request.side,
-            tp_pips=request.tp_pips,
-            sl_pips=request.sl_pips,
+            tp_pips_a=request.tp_pips_a,
+            sl_pips_a=request.sl_pips_a,
+            tp_pips_b=request.tp_pips_b,
+            sl_pips_b=request.sl_pips_b,
             scheduled_congelar=request.scheduled_congelar
         )
 
@@ -884,123 +957,171 @@ async def delete_versus(versus_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+async def execute_congelar_internal(versus_id: str) -> dict:
+    """
+    Internal function to execute Congelar step.
+    Can be called from API endpoint or background scheduler.
+    Raises Exception on failure (not HTTPException).
+    """
+    config = versus_manager.get(versus_id)
+    if not config:
+        raise Exception(f"Versus {versus_id} not found")
+
+    if config["status"] != VersusStatus.PENDING.value:
+        raise Exception(f"Cannot congelar Versus in {config['status']} status. Must be pending.")
+
+    account_a = config["account_a"]
+    symbol = config["symbol"]
+    lots = config["lots"]
+
+    logger.info(f"Executing Congelar for Versus {versus_id}: Opening BUY and SELL on account {account_a}")
+
+    # Find VPS for Account A
+    vps_source = account_vps_cache.get(account_a)
+    if not vps_source:
+        await data_aggregator.fetch_all_agents()
+        vps_source = account_vps_cache.get(account_a)
+        if not vps_source:
+            raise Exception(f"Account {account_a} not found in any VPS agent")
+
+    agent_config = None
+    for agent in settings.VPS_AGENTS:
+        if agent.get("name") == vps_source:
+            agent_config = agent
+            break
+
+    if not agent_config:
+        raise Exception(f"VPS agent config not found for {vps_source}")
+
+    vps_url = agent_config["url"]
+    tickets_a = []
+
+    # Get TP/SL config for Account A
+    tp_pips_a = config["tp_pips_a"]
+    sl_pips_a = config["sl_pips_a"]
+
+    # Determine pip value based on symbol type
+    symbol_upper = symbol.upper()
+    if "JPY" in symbol_upper:
+        pip_value = 0.01
+        decimals = 3
+    elif symbol_upper.startswith(("BTC", "ETH", "XRP", "LTC", "BCH")):
+        # Crypto pairs use different pip values
+        pip_value = 1.0 if symbol_upper.startswith(("BTC", "ETH")) else 0.01
+        decimals = 2
+    elif symbol_upper.startswith(("XAU", "XAG")):
+        # Metals
+        pip_value = 0.01
+        decimals = 2
+    else:
+        pip_value = 0.0001
+        decimals = 5
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        # First get current price to calculate TP/SL
+        quote_response = await client.get(f"{vps_url}/quote/{symbol}")
+        if quote_response.status_code != 200:
+            raise Exception(f"Failed to get quote for {symbol}")
+
+        quote_data = quote_response.json()
+        ask_price = quote_data.get("ask")
+        bid_price = quote_data.get("bid")
+
+        # Calculate TP/SL for BUY (enters at ask)
+        buy_tp = round(ask_price + (tp_pips_a * pip_value), decimals)
+        buy_sl = round(ask_price - (sl_pips_a * pip_value), decimals)
+
+        # Calculate TP/SL for SELL (enters at bid)
+        sell_tp = round(bid_price - (tp_pips_a * pip_value), decimals)
+        sell_sl = round(bid_price + (sl_pips_a * pip_value), decimals)
+
+        logger.info(f"Versus {versus_id}: BUY TP={buy_tp}, SL={buy_sl} | SELL TP={sell_tp}, SL={sell_sl}")
+
+        # Open BUY position with TP/SL included
+        buy_request = {
+            "symbol": symbol,
+            "lot": lots,
+            "order_type": "BUY",
+            "tp": buy_tp,
+            "sl": buy_sl,
+            "comment": f"Versus-{versus_id}-BUY"
+        }
+        buy_response = await client.post(f"{vps_url}/positions/open", json=buy_request)
+
+        if buy_response.status_code != 200:
+            raise Exception(f"Failed to open BUY: {buy_response.text}")
+
+        buy_result = buy_response.json()
+        if not buy_result.get("success"):
+            raise Exception(f"Failed to open BUY: {buy_result.get('message', 'Unknown error')}")
+
+        buy_ticket = buy_result.get("ticket")
+        tickets_a.append(buy_ticket)
+        logger.info(f"Versus {versus_id}: BUY opened with ticket {buy_ticket} (TP/SL included)")
+
+        # Open SELL position with TP/SL included
+        sell_request = {
+            "symbol": symbol,
+            "lot": lots,
+            "order_type": "SELL",
+            "tp": sell_tp,
+            "sl": sell_sl,
+            "comment": f"Versus-{versus_id}-SELL"
+        }
+        sell_response = await client.post(f"{vps_url}/positions/open", json=sell_request)
+
+        if sell_response.status_code != 200:
+            # Rollback: close the BUY position
+            logger.error(f"Versus {versus_id}: SELL failed, rolling back BUY ticket {buy_ticket}")
+            try:
+                await client.post(f"{vps_url}/positions/close", json={"ticket": buy_ticket})
+            except Exception as rollback_error:
+                logger.error(f"Rollback failed: {rollback_error}")
+            raise Exception(f"Failed to open SELL: {sell_response.text}")
+
+        sell_result = sell_response.json()
+        if not sell_result.get("success"):
+            # Rollback: close the BUY position
+            logger.error(f"Versus {versus_id}: SELL failed, rolling back BUY ticket {buy_ticket}")
+            try:
+                await client.post(f"{vps_url}/positions/close", json={"ticket": buy_ticket})
+            except Exception as rollback_error:
+                logger.error(f"Rollback failed: {rollback_error}")
+            raise Exception(f"Failed to open SELL: {sell_result.get('message', 'Unknown error')}")
+
+        sell_ticket = sell_result.get("ticket")
+        tickets_a.append(sell_ticket)
+        logger.info(f"Versus {versus_id}: SELL opened with ticket {sell_ticket} (TP/SL included)")
+
+    # Update status to congelado
+    updated_config = versus_manager.update_status(
+        versus_id,
+        VersusStatus.CONGELADO,
+        tickets_a=tickets_a
+    )
+
+    # Clear cache for account A
+    invalidate_account_cache(account_a)
+
+    return {
+        "status": "success",
+        "message": f"Congelado: BUY and SELL opened on Account A",
+        "versus": updated_config,
+        "tickets": tickets_a
+    }
+
+
 @app.post("/api/versus/{versus_id}/congelar")
 async def execute_congelar(versus_id: str):
     """
     Execute the Congelar step:
-    1. Open BUY on Account A (X lots, no SL/TP)
-    2. Open SELL on Account A (X lots, no SL/TP)
+    1. Open BUY on Account A with TP/SL
+    2. Open SELL on Account A with TP/SL
     3. Store tickets, set status = "congelado"
     """
     try:
-        config = versus_manager.get(versus_id)
-        if not config:
-            raise HTTPException(status_code=404, detail=f"Versus {versus_id} not found")
-
-        if config["status"] != VersusStatus.PENDING.value:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Cannot congelar Versus in {config['status']} status. Must be pending."
-            )
-
-        account_a = config["account_a"]
-        symbol = config["symbol"]
-        lots = config["lots"]
-
-        logger.info(f"Executing Congelar for Versus {versus_id}: Opening BUY and SELL on account {account_a}")
-
-        # Find VPS for Account A
-        vps_source = account_vps_cache.get(account_a)
-        if not vps_source:
-            await data_aggregator.fetch_all_agents()
-            vps_source = account_vps_cache.get(account_a)
-            if not vps_source:
-                raise HTTPException(status_code=404, detail=f"Account {account_a} not found in any VPS agent")
-
-        agent_config = None
-        for agent in settings.VPS_AGENTS:
-            if agent.get("name") == vps_source:
-                agent_config = agent
-                break
-
-        if not agent_config:
-            raise HTTPException(status_code=500, detail=f"VPS agent config not found for {vps_source}")
-
-        vps_url = agent_config["url"]
-        tickets_a = []
-
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            # Open BUY position
-            buy_request = {
-                "symbol": symbol,
-                "lot": lots,
-                "order_type": "BUY",
-                "comment": f"Versus-{versus_id}-BUY"
-            }
-            buy_response = await client.post(f"{vps_url}/positions/open", json=buy_request)
-
-            if buy_response.status_code != 200:
-                raise HTTPException(status_code=buy_response.status_code, detail=f"Failed to open BUY: {buy_response.text}")
-
-            buy_result = buy_response.json()
-            if not buy_result.get("success"):
-                raise HTTPException(status_code=500, detail=f"Failed to open BUY: {buy_result.get('message', 'Unknown error')}")
-
-            buy_ticket = buy_result.get("ticket")
-            tickets_a.append(buy_ticket)
-            logger.info(f"Versus {versus_id}: BUY opened with ticket {buy_ticket}")
-
-            # Open SELL position
-            sell_request = {
-                "symbol": symbol,
-                "lot": lots,
-                "order_type": "SELL",
-                "comment": f"Versus-{versus_id}-SELL"
-            }
-            sell_response = await client.post(f"{vps_url}/positions/open", json=sell_request)
-
-            if sell_response.status_code != 200:
-                # Rollback: close the BUY position
-                logger.error(f"Versus {versus_id}: SELL failed, rolling back BUY ticket {buy_ticket}")
-                try:
-                    await client.post(f"{vps_url}/positions/close", json={"ticket": buy_ticket})
-                except Exception as rollback_error:
-                    logger.error(f"Rollback failed: {rollback_error}")
-                raise HTTPException(status_code=sell_response.status_code, detail=f"Failed to open SELL: {sell_response.text}")
-
-            sell_result = sell_response.json()
-            if not sell_result.get("success"):
-                # Rollback: close the BUY position
-                logger.error(f"Versus {versus_id}: SELL failed, rolling back BUY ticket {buy_ticket}")
-                try:
-                    await client.post(f"{vps_url}/positions/close", json={"ticket": buy_ticket})
-                except Exception as rollback_error:
-                    logger.error(f"Rollback failed: {rollback_error}")
-                raise HTTPException(status_code=500, detail=f"Failed to open SELL: {sell_result.get('message', 'Unknown error')}")
-
-            sell_ticket = sell_result.get("ticket")
-            tickets_a.append(sell_ticket)
-            logger.info(f"Versus {versus_id}: SELL opened with ticket {sell_ticket}")
-
-        # Update status to congelado
-        updated_config = versus_manager.update_status(
-            versus_id,
-            VersusStatus.CONGELADO,
-            tickets_a=tickets_a
-        )
-
-        # Clear cache for account A
-        invalidate_account_cache(account_a)
-
-        return {
-            "status": "success",
-            "message": f"Congelado: BUY and SELL opened on Account A",
-            "versus": updated_config,
-            "tickets": tickets_a
-        }
-
-    except HTTPException:
-        raise
+        result = await execute_congelar_internal(versus_id)
+        return result
     except Exception as e:
         logger.error(f"Error executing Congelar: {str(e)}")
         versus_manager.update_status(versus_id, VersusStatus.ERROR, error_message=str(e))
@@ -1034,8 +1155,10 @@ async def execute_transferir(versus_id: str):
         symbol = config["symbol"]
         lots = config["lots"]
         side = config["side"]  # Account A's direction
-        tp_pips = config["tp_pips"]
-        sl_pips = config["sl_pips"]
+        tp_pips_a = config["tp_pips_a"]
+        sl_pips_a = config["sl_pips_a"]
+        tp_pips_b = config["tp_pips_b"]
+        sl_pips_b = config["sl_pips_b"]
         tickets_a = config["tickets_a"]
 
         if len(tickets_a) != 2:
@@ -1104,35 +1227,69 @@ async def execute_transferir(versus_id: str):
             if current_price is None:
                 raise HTTPException(status_code=400, detail="Could not determine current price")
 
-            # Determine pip value (for forex pairs, typically 0.0001 for most, 0.01 for JPY pairs)
-            pip_value = 0.01 if "JPY" in symbol.upper() else 0.0001
+            # Determine pip value based on symbol type
+            symbol_upper = symbol.upper()
+            if "JPY" in symbol_upper:
+                pip_value = 0.01
+                decimals = 3
+            elif symbol_upper.startswith(("BTC", "ETH", "XRP", "LTC", "BCH")):
+                # Crypto pairs use different pip values
+                pip_value = 1.0 if symbol_upper.startswith(("BTC", "ETH")) else 0.01
+                decimals = 2
+            elif symbol_upper.startswith(("XAU", "XAG")):
+                # Metals
+                pip_value = 0.01
+                decimals = 2
+            else:
+                pip_value = 0.0001
+                decimals = 5
+
+            # Fetch spread from broker
+            quote_response = await client.get(f"{vps_url_a}/quote/{symbol}")
+            if quote_response.status_code != 200:
+                logger.warning(f"Failed to get quote for spread, using 0: {quote_response.text}")
+                spread_pips = 0
+            else:
+                quote_data = quote_response.json()
+                spread_pips = quote_data.get("spread_pips", 0)
+            logger.info(f"Versus {versus_id}: Current spread for {symbol}: {spread_pips} pips")
 
             # Calculate TP and SL prices based on side
+            # NEW LOGIC: Account A's TP/SL is recalculated based on Account B's values + spread
             if side == "BUY":
                 # Account A keeps BUY, close SELL
                 ticket_to_close = sell_ticket
                 remaining_ticket = buy_ticket
-                # For BUY: TP is above current, SL is below
-                tp_price_a = current_price + (tp_pips * pip_value)
-                sl_price_a = current_price - (sl_pips * pip_value)
-                # Account B opens SELL (opposite), mirrored TP/SL
+
+                # Recalculate Account A's TP/SL with spread adjustment
+                # If A is BUY: new_tp_pips = sl_pips_b + spread, new_sl_pips = tp_pips_b + spread
+                new_tp_pips_a = sl_pips_b + spread_pips
+                new_sl_pips_a = tp_pips_b + spread_pips
+                tp_price_a = current_price + (new_tp_pips_a * pip_value)
+                sl_price_a = current_price - (new_sl_pips_a * pip_value)
+
+                # Account B opens SELL (opposite) with its own TP/SL
                 opposite_side = "SELL"
-                tp_price_b = sl_price_a  # B's TP is A's SL
-                sl_price_b = tp_price_a  # B's SL is A's TP
+                tp_price_b = current_price - (tp_pips_b * pip_value)
+                sl_price_b = current_price + (sl_pips_b * pip_value)
             else:  # SELL
                 # Account A keeps SELL, close BUY
                 ticket_to_close = buy_ticket
                 remaining_ticket = sell_ticket
-                # For SELL: TP is below current, SL is above
-                tp_price_a = current_price - (tp_pips * pip_value)
-                sl_price_a = current_price + (sl_pips * pip_value)
-                # Account B opens BUY (opposite), mirrored TP/SL
-                opposite_side = "BUY"
-                tp_price_b = sl_price_a  # B's TP is A's SL
-                sl_price_b = tp_price_a  # B's SL is A's TP
 
-            # Round prices to 5 decimal places (or 3 for JPY pairs)
-            decimals = 3 if "JPY" in symbol.upper() else 5
+                # Recalculate Account A's TP/SL with spread adjustment
+                # If A is SELL: new_tp_pips = sl_pips_b - spread, new_sl_pips = tp_pips_b - spread
+                new_tp_pips_a = sl_pips_b - spread_pips
+                new_sl_pips_a = tp_pips_b - spread_pips
+                tp_price_a = current_price - (new_tp_pips_a * pip_value)
+                sl_price_a = current_price + (new_sl_pips_a * pip_value)
+
+                # Account B opens BUY (opposite) with its own TP/SL
+                opposite_side = "BUY"
+                tp_price_b = current_price + (tp_pips_b * pip_value)
+                sl_price_b = current_price - (sl_pips_b * pip_value)
+
+            # Round prices
             tp_price_a = round(tp_price_a, decimals)
             sl_price_a = round(sl_price_a, decimals)
             tp_price_b = round(tp_price_b, decimals)

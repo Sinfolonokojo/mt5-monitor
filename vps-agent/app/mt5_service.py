@@ -870,3 +870,60 @@ class MT5Service:
                 total_profit=0.0,
                 position_count=0
             )
+
+    def get_quote(self, symbol: str) -> Optional[dict]:
+        """
+        Get current bid/ask quote and spread for a symbol
+
+        Args:
+            symbol: Trading symbol (e.g., EURUSD)
+
+        Returns:
+            Dict with bid, ask, spread_points, spread_pips, pip_value
+        """
+        try:
+            if not self.initialized:
+                self.initialize()
+
+            # Ensure symbol is selected
+            symbol_info = mt5.symbol_info(symbol)
+            if symbol_info is None:
+                logger.error(f"Symbol {symbol} not found")
+                return None
+
+            if not symbol_info.visible:
+                if not mt5.symbol_select(symbol, True):
+                    logger.error(f"Failed to select symbol {symbol}")
+                    return None
+
+            # Get tick data
+            tick = mt5.symbol_info_tick(symbol)
+            if tick is None:
+                logger.error(f"Failed to get tick for {symbol}")
+                return None
+
+            # Calculate spread - determine pip value based on symbol type
+            symbol_upper = symbol.upper()
+            if "JPY" in symbol_upper:
+                pip_value = 0.01
+            elif symbol_upper.startswith(("BTC", "ETH", "XRP", "LTC", "BCH", "XAU", "XAG")):
+                # Crypto and metals use different pip values
+                pip_value = 1.0 if symbol_upper.startswith(("BTC", "ETH")) else 0.01
+            else:
+                pip_value = 0.0001
+            spread_points = tick.ask - tick.bid
+            spread_pips = spread_points / pip_value
+
+            return {
+                "symbol": symbol,
+                "bid": tick.bid,
+                "ask": tick.ask,
+                "spread_points": round(spread_points, 6),
+                "spread_pips": round(spread_pips, 2),
+                "pip_value": pip_value,
+                "timestamp": datetime.now().isoformat()
+            }
+
+        except Exception as e:
+            logger.error(f"Error getting quote for {symbol}: {str(e)}")
+            return None
