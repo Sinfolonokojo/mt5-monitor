@@ -304,3 +304,31 @@ async def get_open_positions():
     except Exception as e:
         logger.error(f"Error fetching open positions: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to fetch open positions: {str(e)}")
+
+
+@app.get("/quote/{symbol}")
+async def get_quote(symbol: str):
+    """
+    Get current bid/ask quote and spread for a symbol
+
+    Args:
+        symbol: Trading symbol (e.g., EURUSD)
+
+    Returns:
+        Quote data with bid, ask, and spread in pips
+    """
+    try:
+        logger.info(f"Fetching quote for {symbol}")
+        quote = mt5_service.get_quote(symbol)
+
+        if quote is None:
+            raise HTTPException(status_code=404, detail=f"Quote not found for {symbol}")
+
+        logger.info(f"Quote for {symbol}: bid={quote['bid']}, ask={quote['ask']}, spread={quote['spread_pips']} pips")
+        return quote
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching quote for {symbol}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch quote: {str(e)}")

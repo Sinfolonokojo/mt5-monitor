@@ -254,6 +254,124 @@ class ApiService {
       throw error;
     }
   }
+
+  // Versus Trading API Methods
+
+  async fetchVersusFeatureStatus() {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/versus/feature-status`);
+
+      if (!response.ok) {
+        // If 503, feature is disabled
+        if (response.status === 503) {
+          return { enabled: false };
+        }
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.error('Error fetching versus feature status:', error);
+      return { enabled: false };
+    }
+  }
+
+  async fetchVersusList() {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/versus`);
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        const errorMessage = errorData.detail || `HTTP error! status: ${response.status}`;
+        throw new Error(errorMessage);
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.error('Error fetching versus list:', error);
+      throw error;
+    }
+  }
+
+  async createVersus(config) {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/versus`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(config)
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        const errorMessage = errorData.detail || `HTTP error! status: ${response.status}`;
+        throw new Error(errorMessage);
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.error('Error creating versus:', error);
+      throw error;
+    }
+  }
+
+  async executeCongelar(versusId) {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/versus/${versusId}/congelar`, {
+        method: 'POST'
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        const errorMessage = errorData.detail || `HTTP error! status: ${response.status}`;
+        throw new Error(errorMessage);
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.error('Error executing congelar:', error);
+      throw error;
+    }
+  }
+
+  async executeTransferir(versusId) {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/versus/${versusId}/transferir`, {
+        method: 'POST'
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        const errorMessage = errorData.detail || `HTTP error! status: ${response.status}`;
+        throw new Error(errorMessage);
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.error('Error executing transferir:', error);
+      throw error;
+    }
+  }
+
+  async cancelVersus(versusId) {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/versus/${versusId}`, {
+        method: 'DELETE'
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        const errorMessage = errorData.detail || `HTTP error! status: ${response.status}`;
+        throw new Error(errorMessage);
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.error('Error canceling versus:', error);
+      throw error;
+    }
+  }
 }
 
 export default new ApiService();
