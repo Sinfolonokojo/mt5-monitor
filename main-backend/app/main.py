@@ -8,7 +8,8 @@ from datetime import datetime
 import httpx
 from .config import settings
 from .aggregator import data_aggregator
-from .cache import cache
+from .cache import cache, smart_cache
+from .http_client import get_http_client, close_http_client
 from .phase_manager import phase_manager
 from .vs_manager import vs_manager
 from .versus_manager import versus_manager
@@ -90,6 +91,10 @@ async def lifespan(app: FastAPI):
             await asyncio.wait_for(scheduled_congelar_task, timeout=5.0)
         except asyncio.TimeoutError:
             logger.warning("Scheduled congelar task did not finish in time")
+
+    # Close HTTP client pool
+    await close_http_client()
+    logger.info("HTTP client closed")
 
 
 app = FastAPI(
@@ -211,8 +216,14 @@ async def update_account_phase(account_number: int, request: PhaseUpdateRequest)
         logger.info(f"Updating phase for account {account_number} to '{request.phase}'")
         phase_manager.update_phase(account_number, request.phase)
 
-        # Clear cache to reflect the change immediately
-        cache.clear()
+        # Update cache in-place instead of clearing all
+        updated = await smart_cache.update_account_field(
+            account_number, "phase", request.phase
+        )
+
+        if not updated:
+            # Account not in cache, that's okay - will be fetched on next request
+            logger.debug(f"Account {account_number} not in cache for phase update")
 
         return {
             "status": "success",
@@ -235,8 +246,13 @@ async def update_account_vs(account_number: int, request: VSUpdateRequest):
         if not success:
             raise HTTPException(status_code=400, detail=message)
 
-        # Clear cache to reflect the change immediately
-        cache.clear()
+        # Update cache in-place instead of clearing all
+        updated = await smart_cache.update_account_field(
+            account_number, "vs_group", request.vs_group
+        )
+
+        if not updated:
+            logger.debug(f"Account {account_number} not in cache for VS update")
 
         return {
             "status": "success",
@@ -312,9 +328,15 @@ async def sync_to_google_sheets():
 @app.post("/api/refresh")
 async def force_refresh():
     """Clear cache and force data refresh"""
-    cache.clear()
+    await smart_cache.clear()
     account_vps_cache.clear()
     return {"status": "success", "message": "Cache cleared, next request will fetch fresh data"}
+
+
+@app.get("/api/cache/stats")
+async def get_cache_stats():
+    """Get cache statistics for monitoring"""
+    return smart_cache.stats()
 
 
 @app.get("/api/accounts/{account_number}/trade-history", response_model=TradeHistoryResponse)
@@ -418,16 +440,14 @@ async def sync_trade_history_to_sheets(account_number: int):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-def invalidate_account_cache(account_number: int):
+async def invalidate_account_cache(account_number: int):
     """
-    Invalidate cache entry for a specific account only
+    Invalidate cache entry for a specific account only.
 
-    This is faster than clearing the entire cache
+    This now performs SELECTIVE invalidation - only the affected account
+    is removed from cache, not all accounts.
     """
-    # For now, we clear the entire cache since our cache structure doesn't support
-    # partial invalidation. In the future, consider using a dict-based cache
-    # where we can delete specific keys.
-    cache.clear()
+    await smart_cache.invalidate_account(account_number)
     # Note: We intentionally DON'T clear account_vps_cache as VPS mapping is stable
 
 
@@ -465,13 +485,13 @@ async def get_single_account(account_number: int):
             raise HTTPException(status_code=500, detail=f"VPS agent configuration not found for {vps_source}")
 
         # Fetch just this account from the VPS agent
-        async with httpx.AsyncClient(timeout=settings.AGENT_TIMEOUT) as client:
-            response = await client.get(f"{agent_config['url']}/accounts")
+        client = await get_http_client()
+        response = await client.get(f"{agent_config['url']}/accounts", timeout=settings.AGENT_TIMEOUT)
 
-            if response.status_code != 200:
-                raise HTTPException(status_code=response.status_code, detail="Failed to fetch account data")
+        if response.status_code != 200:
+            raise HTTPException(status_code=response.status_code, detail="Failed to fetch account data")
 
-            accounts_data = response.json()
+        accounts_data = response.json()
 
         # Find the specific account in the response
         raw_account = None
@@ -585,34 +605,35 @@ async def proxy_open_position(account_number: int, request: dict):
         # Forward request to VPS agent
         logger.info(f"Forwarding open position request for account {account_number} to {vps_url} ({vps_source})")
 
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.post(
-                f"{vps_url}/positions/open",
-                json=request
-            )
+        client = await get_http_client()
+        response = await client.post(
+            f"{vps_url}/positions/open",
+            json=request,
+            timeout=30.0
+        )
 
-            if response.status_code != 200:
-                error_msg = f"VPS agent returned error: {response.text}"
-                trade_logger.log_trade_error(transaction_id, "OPEN_POSITION", account_number, error_msg)
-                raise HTTPException(status_code=response.status_code, detail=error_msg)
+        if response.status_code != 200:
+            error_msg = f"VPS agent returned error: {response.text}"
+            trade_logger.log_trade_error(transaction_id, "OPEN_POSITION", account_number, error_msg)
+            raise HTTPException(status_code=response.status_code, detail=error_msg)
 
-            result = response.json()
+        result = response.json()
 
-            # Log trade response
-            trade_logger.log_trade_response(
-                transaction_id=transaction_id,
-                operation="OPEN_POSITION",
-                account_number=account_number,
-                response_data=result,
-                success=result.get("success", False)
-            )
+        # Log trade response
+        trade_logger.log_trade_response(
+            transaction_id=transaction_id,
+            operation="OPEN_POSITION",
+            account_number=account_number,
+            response_data=result,
+            success=result.get("success", False)
+        )
 
-            # Clear cache after successful trade to ensure fresh data
-            if result.get("success"):
-                invalidate_account_cache(account_number)
-                logger.info(f"Cache invalidated for account {account_number}")
+        # Clear cache after successful trade to ensure fresh data
+        if result.get("success"):
+            await invalidate_account_cache(account_number)
+            logger.info(f"Cache invalidated for account {account_number}")
 
-            return result
+        return result
 
     except HTTPException:
         raise
@@ -677,34 +698,35 @@ async def proxy_close_position(account_number: int, request: dict):
         # Forward request to VPS agent
         logger.info(f"Forwarding close position request for account {account_number} to {vps_url} ({vps_source})")
 
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.post(
-                f"{vps_url}/positions/close",
-                json=request
-            )
+        client = await get_http_client()
+        response = await client.post(
+            f"{vps_url}/positions/close",
+            json=request,
+            timeout=30.0
+        )
 
-            if response.status_code != 200:
-                error_msg = f"VPS agent returned error: {response.text}"
-                trade_logger.log_trade_error(transaction_id, "CLOSE_POSITION", account_number, error_msg)
-                raise HTTPException(status_code=response.status_code, detail=error_msg)
+        if response.status_code != 200:
+            error_msg = f"VPS agent returned error: {response.text}"
+            trade_logger.log_trade_error(transaction_id, "CLOSE_POSITION", account_number, error_msg)
+            raise HTTPException(status_code=response.status_code, detail=error_msg)
 
-            result = response.json()
+        result = response.json()
 
-            # Log trade response
-            trade_logger.log_trade_response(
-                transaction_id=transaction_id,
-                operation="CLOSE_POSITION",
-                account_number=account_number,
-                response_data=result,
-                success=result.get("success", False)
-            )
+        # Log trade response
+        trade_logger.log_trade_response(
+            transaction_id=transaction_id,
+            operation="CLOSE_POSITION",
+            account_number=account_number,
+            response_data=result,
+            success=result.get("success", False)
+        )
 
-            # Clear cache after successful trade to ensure fresh data
-            if result.get("success"):
-                invalidate_account_cache(account_number)
-                logger.info(f"Cache invalidated for account {account_number}")
+        # Clear cache after successful trade to ensure fresh data
+        if result.get("success"):
+            await invalidate_account_cache(account_number)
+            logger.info(f"Cache invalidated for account {account_number}")
 
-            return result
+        return result
 
     except HTTPException:
         raise
@@ -769,34 +791,35 @@ async def proxy_modify_position(account_number: int, request: dict):
         # Forward request to VPS agent
         logger.info(f"Forwarding modify position request for account {account_number} to {vps_url} ({vps_source})")
 
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.put(
-                f"{vps_url}/positions/modify",
-                json=request
-            )
+        client = await get_http_client()
+        response = await client.put(
+            f"{vps_url}/positions/modify",
+            json=request,
+            timeout=30.0
+        )
 
-            if response.status_code != 200:
-                error_msg = f"VPS agent returned error: {response.text}"
-                trade_logger.log_trade_error(transaction_id, "MODIFY_POSITION", account_number, error_msg)
-                raise HTTPException(status_code=response.status_code, detail=error_msg)
+        if response.status_code != 200:
+            error_msg = f"VPS agent returned error: {response.text}"
+            trade_logger.log_trade_error(transaction_id, "MODIFY_POSITION", account_number, error_msg)
+            raise HTTPException(status_code=response.status_code, detail=error_msg)
 
-            result = response.json()
+        result = response.json()
 
-            # Log trade response
-            trade_logger.log_trade_response(
-                transaction_id=transaction_id,
-                operation="MODIFY_POSITION",
-                account_number=account_number,
-                response_data=result,
-                success=result.get("success", False)
-            )
+        # Log trade response
+        trade_logger.log_trade_response(
+            transaction_id=transaction_id,
+            operation="MODIFY_POSITION",
+            account_number=account_number,
+            response_data=result,
+            success=result.get("success", False)
+        )
 
-            # Clear cache after successful trade to ensure fresh data
-            if result.get("success"):
-                invalidate_account_cache(account_number)
-                logger.info(f"Cache invalidated for account {account_number}")
+        # Clear cache after successful trade to ensure fresh data
+        if result.get("success"):
+            await invalidate_account_cache(account_number)
+            logger.info(f"Cache invalidated for account {account_number}")
 
-            return result
+        return result
 
     except HTTPException:
         raise
@@ -854,18 +877,18 @@ async def get_account_positions(account_number: int):
         # Forward request to VPS agent
         logger.info(f"Fetching open positions for account {account_number} from {vps_url} ({vps_source})")
 
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.get(f"{vps_url}/positions")
+        client = await get_http_client()
+        response = await client.get(f"{vps_url}/positions", timeout=30.0)
 
-            if response.status_code != 200:
-                raise HTTPException(
-                    status_code=response.status_code,
-                    detail=f"VPS agent returned error: {response.text}"
-                )
+        if response.status_code != 200:
+            raise HTTPException(
+                status_code=response.status_code,
+                detail=f"VPS agent returned error: {response.text}"
+            )
 
-            result = response.json()
-            logger.info(f"Found {result.get('position_count', 0)} open positions for account {account_number}")
-            return result
+        result = response.json()
+        logger.info(f"Found {result.get('position_count', 0)} open positions for account {account_number}")
+        return result
 
     except HTTPException:
         raise
@@ -1017,81 +1040,82 @@ async def execute_congelar_internal(versus_id: str) -> dict:
         pip_value = 0.0001
         decimals = 5
 
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        # First get current price to calculate TP/SL
-        quote_response = await client.get(f"{vps_url}/quote/{symbol}")
-        if quote_response.status_code != 200:
-            raise Exception(f"Failed to get quote for {symbol}")
+    client = await get_http_client()
 
-        quote_data = quote_response.json()
-        ask_price = quote_data.get("ask")
-        bid_price = quote_data.get("bid")
+    # First get current price to calculate TP/SL
+    quote_response = await client.get(f"{vps_url}/quote/{symbol}", timeout=30.0)
+    if quote_response.status_code != 200:
+        raise Exception(f"Failed to get quote for {symbol}")
 
-        # Calculate TP/SL for BUY (enters at ask)
-        buy_tp = round(ask_price + (tp_pips_a * pip_value), decimals)
-        buy_sl = round(ask_price - (sl_pips_a * pip_value), decimals)
+    quote_data = quote_response.json()
+    ask_price = quote_data.get("ask")
+    bid_price = quote_data.get("bid")
 
-        # Calculate TP/SL for SELL (enters at bid)
-        sell_tp = round(bid_price - (tp_pips_a * pip_value), decimals)
-        sell_sl = round(bid_price + (sl_pips_a * pip_value), decimals)
+    # Calculate TP/SL for BUY (enters at ask)
+    buy_tp = round(ask_price + (tp_pips_a * pip_value), decimals)
+    buy_sl = round(ask_price - (sl_pips_a * pip_value), decimals)
 
-        logger.info(f"Versus {versus_id}: BUY TP={buy_tp}, SL={buy_sl} | SELL TP={sell_tp}, SL={sell_sl}")
+    # Calculate TP/SL for SELL (enters at bid)
+    sell_tp = round(bid_price - (tp_pips_a * pip_value), decimals)
+    sell_sl = round(bid_price + (sl_pips_a * pip_value), decimals)
 
-        # Open BUY position with TP/SL included
-        buy_request = {
-            "symbol": symbol,
-            "lot": lots,
-            "order_type": "BUY",
-            "tp": buy_tp,
-            "sl": buy_sl,
-            "comment": f"Versus-{versus_id}-BUY"
-        }
-        buy_response = await client.post(f"{vps_url}/positions/open", json=buy_request)
+    logger.info(f"Versus {versus_id}: BUY TP={buy_tp}, SL={buy_sl} | SELL TP={sell_tp}, SL={sell_sl}")
 
-        if buy_response.status_code != 200:
-            raise Exception(f"Failed to open BUY: {buy_response.text}")
+    # Open BUY position with TP/SL included
+    buy_request = {
+        "symbol": symbol,
+        "lot": lots,
+        "order_type": "BUY",
+        "tp": buy_tp,
+        "sl": buy_sl,
+        "comment": f"Versus-{versus_id}-BUY"
+    }
+    buy_response = await client.post(f"{vps_url}/positions/open", json=buy_request, timeout=30.0)
 
-        buy_result = buy_response.json()
-        if not buy_result.get("success"):
-            raise Exception(f"Failed to open BUY: {buy_result.get('message', 'Unknown error')}")
+    if buy_response.status_code != 200:
+        raise Exception(f"Failed to open BUY: {buy_response.text}")
 
-        buy_ticket = buy_result.get("ticket")
-        tickets_a.append(buy_ticket)
-        logger.info(f"Versus {versus_id}: BUY opened with ticket {buy_ticket} (TP/SL included)")
+    buy_result = buy_response.json()
+    if not buy_result.get("success"):
+        raise Exception(f"Failed to open BUY: {buy_result.get('message', 'Unknown error')}")
 
-        # Open SELL position with TP/SL included
-        sell_request = {
-            "symbol": symbol,
-            "lot": lots,
-            "order_type": "SELL",
-            "tp": sell_tp,
-            "sl": sell_sl,
-            "comment": f"Versus-{versus_id}-SELL"
-        }
-        sell_response = await client.post(f"{vps_url}/positions/open", json=sell_request)
+    buy_ticket = buy_result.get("ticket")
+    tickets_a.append(buy_ticket)
+    logger.info(f"Versus {versus_id}: BUY opened with ticket {buy_ticket} (TP/SL included)")
 
-        if sell_response.status_code != 200:
-            # Rollback: close the BUY position
-            logger.error(f"Versus {versus_id}: SELL failed, rolling back BUY ticket {buy_ticket}")
-            try:
-                await client.post(f"{vps_url}/positions/close", json={"ticket": buy_ticket})
-            except Exception as rollback_error:
-                logger.error(f"Rollback failed: {rollback_error}")
-            raise Exception(f"Failed to open SELL: {sell_response.text}")
+    # Open SELL position with TP/SL included
+    sell_request = {
+        "symbol": symbol,
+        "lot": lots,
+        "order_type": "SELL",
+        "tp": sell_tp,
+        "sl": sell_sl,
+        "comment": f"Versus-{versus_id}-SELL"
+    }
+    sell_response = await client.post(f"{vps_url}/positions/open", json=sell_request, timeout=30.0)
 
-        sell_result = sell_response.json()
-        if not sell_result.get("success"):
-            # Rollback: close the BUY position
-            logger.error(f"Versus {versus_id}: SELL failed, rolling back BUY ticket {buy_ticket}")
-            try:
-                await client.post(f"{vps_url}/positions/close", json={"ticket": buy_ticket})
-            except Exception as rollback_error:
-                logger.error(f"Rollback failed: {rollback_error}")
-            raise Exception(f"Failed to open SELL: {sell_result.get('message', 'Unknown error')}")
+    if sell_response.status_code != 200:
+        # Rollback: close the BUY position
+        logger.error(f"Versus {versus_id}: SELL failed, rolling back BUY ticket {buy_ticket}")
+        try:
+            await client.post(f"{vps_url}/positions/close", json={"ticket": buy_ticket}, timeout=30.0)
+        except Exception as rollback_error:
+            logger.error(f"Rollback failed: {rollback_error}")
+        raise Exception(f"Failed to open SELL: {sell_response.text}")
 
-        sell_ticket = sell_result.get("ticket")
-        tickets_a.append(sell_ticket)
-        logger.info(f"Versus {versus_id}: SELL opened with ticket {sell_ticket} (TP/SL included)")
+    sell_result = sell_response.json()
+    if not sell_result.get("success"):
+        # Rollback: close the BUY position
+        logger.error(f"Versus {versus_id}: SELL failed, rolling back BUY ticket {buy_ticket}")
+        try:
+            await client.post(f"{vps_url}/positions/close", json={"ticket": buy_ticket}, timeout=30.0)
+        except Exception as rollback_error:
+            logger.error(f"Rollback failed: {rollback_error}")
+        raise Exception(f"Failed to open SELL: {sell_result.get('message', 'Unknown error')}")
+
+    sell_ticket = sell_result.get("ticket")
+    tickets_a.append(sell_ticket)
+    logger.info(f"Versus {versus_id}: SELL opened with ticket {sell_ticket} (TP/SL included)")
 
     # Update status to congelado
     updated_config = versus_manager.update_status(
@@ -1101,7 +1125,7 @@ async def execute_congelar_internal(versus_id: str) -> dict:
     )
 
     # Clear cache for account A
-    invalidate_account_cache(account_a)
+    await invalidate_account_cache(account_a)
 
     return {
         "status": "success",
@@ -1197,157 +1221,158 @@ async def execute_transferir(versus_id: str):
         vps_url_a = agent_config_a["url"]
         vps_url_b = agent_config_b["url"]
 
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            # First, get open positions on Account A to identify which ticket is which
-            positions_response = await client.get(f"{vps_url_a}/positions")
-            if positions_response.status_code != 200:
-                raise HTTPException(status_code=500, detail="Failed to get positions from Account A")
+        client = await get_http_client()
 
-            positions_data = positions_response.json()
-            positions = positions_data.get("positions", [])
+        # First, get open positions on Account A to identify which ticket is which
+        positions_response = await client.get(f"{vps_url_a}/positions", timeout=30.0)
+        if positions_response.status_code != 200:
+            raise HTTPException(status_code=500, detail="Failed to get positions from Account A")
 
-            # Find our tickets and their details
-            buy_ticket = None
-            sell_ticket = None
-            current_price = None
+        positions_data = positions_response.json()
+        positions = positions_data.get("positions", [])
 
-            for pos in positions:
-                if pos.get("ticket") in tickets_a:
-                    if pos.get("type") == "BUY":
-                        buy_ticket = pos.get("ticket")
+        # Find our tickets and their details
+        buy_ticket = None
+        sell_ticket = None
+        current_price = None
+
+        for pos in positions:
+            if pos.get("ticket") in tickets_a:
+                if pos.get("type") == "BUY":
+                    buy_ticket = pos.get("ticket")
+                    current_price = pos.get("current_price")
+                elif pos.get("type") == "SELL":
+                    sell_ticket = pos.get("ticket")
+                    if current_price is None:
                         current_price = pos.get("current_price")
-                    elif pos.get("type") == "SELL":
-                        sell_ticket = pos.get("ticket")
-                        if current_price is None:
-                            current_price = pos.get("current_price")
 
-            if buy_ticket is None or sell_ticket is None:
-                raise HTTPException(status_code=400, detail="Could not identify BUY and SELL tickets on Account A")
+        if buy_ticket is None or sell_ticket is None:
+            raise HTTPException(status_code=400, detail="Could not identify BUY and SELL tickets on Account A")
 
-            if current_price is None:
-                raise HTTPException(status_code=400, detail="Could not determine current price")
+        if current_price is None:
+            raise HTTPException(status_code=400, detail="Could not determine current price")
 
-            # Determine pip value based on symbol type
-            symbol_upper = symbol.upper()
-            if "JPY" in symbol_upper:
-                pip_value = 0.01
-                decimals = 3
-            elif symbol_upper.startswith(("BTC", "ETH", "XRP", "LTC", "BCH")):
-                # Crypto pairs use different pip values
-                pip_value = 1.0 if symbol_upper.startswith(("BTC", "ETH")) else 0.01
-                decimals = 2
-            elif symbol_upper.startswith(("XAU", "XAG")):
-                # Metals
-                pip_value = 0.01
-                decimals = 2
-            else:
-                pip_value = 0.0001
-                decimals = 5
+        # Determine pip value based on symbol type
+        symbol_upper = symbol.upper()
+        if "JPY" in symbol_upper:
+            pip_value = 0.01
+            decimals = 3
+        elif symbol_upper.startswith(("BTC", "ETH", "XRP", "LTC", "BCH")):
+            # Crypto pairs use different pip values
+            pip_value = 1.0 if symbol_upper.startswith(("BTC", "ETH")) else 0.01
+            decimals = 2
+        elif symbol_upper.startswith(("XAU", "XAG")):
+            # Metals
+            pip_value = 0.01
+            decimals = 2
+        else:
+            pip_value = 0.0001
+            decimals = 5
 
-            # Fetch spread from broker
-            quote_response = await client.get(f"{vps_url_a}/quote/{symbol}")
-            if quote_response.status_code != 200:
-                logger.warning(f"Failed to get quote for spread, using 0: {quote_response.text}")
-                spread_pips = 0
-            else:
-                quote_data = quote_response.json()
-                spread_pips = quote_data.get("spread_pips", 0)
-            logger.info(f"Versus {versus_id}: Current spread for {symbol}: {spread_pips} pips")
+        # Fetch spread from broker
+        quote_response = await client.get(f"{vps_url_a}/quote/{symbol}", timeout=30.0)
+        if quote_response.status_code != 200:
+            logger.warning(f"Failed to get quote for spread, using 0: {quote_response.text}")
+            spread_pips = 0
+        else:
+            quote_data = quote_response.json()
+            spread_pips = quote_data.get("spread_pips", 0)
+        logger.info(f"Versus {versus_id}: Current spread for {symbol}: {spread_pips} pips")
 
-            # Calculate TP and SL prices based on side
-            # NEW LOGIC: Account A's TP/SL is recalculated based on Account B's values + spread
-            if side == "BUY":
-                # Account A keeps BUY, close SELL
-                ticket_to_close = sell_ticket
-                remaining_ticket = buy_ticket
+        # Calculate TP and SL prices based on side
+        # NEW LOGIC: Account A's TP/SL is recalculated based on Account B's values + spread
+        if side == "BUY":
+            # Account A keeps BUY, close SELL
+            ticket_to_close = sell_ticket
+            remaining_ticket = buy_ticket
 
-                # Recalculate Account A's TP/SL with spread adjustment
-                # If A is BUY: new_tp_pips = sl_pips_b + spread, new_sl_pips = tp_pips_b + spread
-                new_tp_pips_a = sl_pips_b + spread_pips
-                new_sl_pips_a = tp_pips_b + spread_pips
-                tp_price_a = current_price + (new_tp_pips_a * pip_value)
-                sl_price_a = current_price - (new_sl_pips_a * pip_value)
+            # Recalculate Account A's TP/SL with spread adjustment
+            # If A is BUY: new_tp_pips = sl_pips_b + spread, new_sl_pips = tp_pips_b + spread
+            new_tp_pips_a = sl_pips_b + spread_pips
+            new_sl_pips_a = tp_pips_b + spread_pips
+            tp_price_a = current_price + (new_tp_pips_a * pip_value)
+            sl_price_a = current_price - (new_sl_pips_a * pip_value)
 
-                # Account B opens SELL (opposite) with its own TP/SL
-                opposite_side = "SELL"
-                tp_price_b = current_price - (tp_pips_b * pip_value)
-                sl_price_b = current_price + (sl_pips_b * pip_value)
-            else:  # SELL
-                # Account A keeps SELL, close BUY
-                ticket_to_close = buy_ticket
-                remaining_ticket = sell_ticket
+            # Account B opens SELL (opposite) with its own TP/SL
+            opposite_side = "SELL"
+            tp_price_b = current_price - (tp_pips_b * pip_value)
+            sl_price_b = current_price + (sl_pips_b * pip_value)
+        else:  # SELL
+            # Account A keeps SELL, close BUY
+            ticket_to_close = buy_ticket
+            remaining_ticket = sell_ticket
 
-                # Recalculate Account A's TP/SL with spread adjustment
-                # If A is SELL: new_tp_pips = sl_pips_b - spread, new_sl_pips = tp_pips_b - spread
-                new_tp_pips_a = sl_pips_b - spread_pips
-                new_sl_pips_a = tp_pips_b - spread_pips
-                tp_price_a = current_price - (new_tp_pips_a * pip_value)
-                sl_price_a = current_price + (new_sl_pips_a * pip_value)
+            # Recalculate Account A's TP/SL with spread adjustment
+            # If A is SELL: new_tp_pips = sl_pips_b - spread, new_sl_pips = tp_pips_b - spread
+            new_tp_pips_a = sl_pips_b - spread_pips
+            new_sl_pips_a = tp_pips_b - spread_pips
+            tp_price_a = current_price - (new_tp_pips_a * pip_value)
+            sl_price_a = current_price + (new_sl_pips_a * pip_value)
 
-                # Account B opens BUY (opposite) with its own TP/SL
-                opposite_side = "BUY"
-                tp_price_b = current_price + (tp_pips_b * pip_value)
-                sl_price_b = current_price - (sl_pips_b * pip_value)
+            # Account B opens BUY (opposite) with its own TP/SL
+            opposite_side = "BUY"
+            tp_price_b = current_price + (tp_pips_b * pip_value)
+            sl_price_b = current_price - (sl_pips_b * pip_value)
 
-            # Round prices
-            tp_price_a = round(tp_price_a, decimals)
-            sl_price_a = round(sl_price_a, decimals)
-            tp_price_b = round(tp_price_b, decimals)
-            sl_price_b = round(sl_price_b, decimals)
+        # Round prices
+        tp_price_a = round(tp_price_a, decimals)
+        sl_price_a = round(sl_price_a, decimals)
+        tp_price_b = round(tp_price_b, decimals)
+        sl_price_b = round(sl_price_b, decimals)
 
-            logger.info(f"Versus {versus_id}: Closing ticket {ticket_to_close}, keeping {remaining_ticket}")
-            logger.info(f"Account A TP: {tp_price_a}, SL: {sl_price_a}")
-            logger.info(f"Account B (2x {lots/2} lots {opposite_side}) TP: {tp_price_b}, SL: {sl_price_b}")
+        logger.info(f"Versus {versus_id}: Closing ticket {ticket_to_close}, keeping {remaining_ticket}")
+        logger.info(f"Account A TP: {tp_price_a}, SL: {sl_price_a}")
+        logger.info(f"Account B (2x {lots/2} lots {opposite_side}) TP: {tp_price_b}, SL: {sl_price_b}")
 
-            # Step 1: Close opposite trade on Account A
-            close_response = await client.post(f"{vps_url_a}/positions/close", json={"ticket": ticket_to_close})
-            if close_response.status_code != 200:
-                raise HTTPException(status_code=500, detail=f"Failed to close opposite position: {close_response.text}")
+        # Step 1: Close opposite trade on Account A
+        close_response = await client.post(f"{vps_url_a}/positions/close", json={"ticket": ticket_to_close}, timeout=30.0)
+        if close_response.status_code != 200:
+            raise HTTPException(status_code=500, detail=f"Failed to close opposite position: {close_response.text}")
 
-            close_result = close_response.json()
-            if not close_result.get("success"):
-                raise HTTPException(status_code=500, detail=f"Failed to close position: {close_result.get('message')}")
+        close_result = close_response.json()
+        if not close_result.get("success"):
+            raise HTTPException(status_code=500, detail=f"Failed to close position: {close_result.get('message')}")
 
-            logger.info(f"Versus {versus_id}: Closed ticket {ticket_to_close}")
+        logger.info(f"Versus {versus_id}: Closed ticket {ticket_to_close}")
 
-            # Step 2: Modify remaining trade on Account A with TP and SL
-            modify_response = await client.put(f"{vps_url_a}/positions/modify", json={
-                "ticket": remaining_ticket,
-                "tp": tp_price_a,
-                "sl": sl_price_a
-            })
-            if modify_response.status_code != 200:
-                logger.warning(f"Failed to modify position: {modify_response.text}")
-                # Continue anyway - position is open, just without SL/TP
+        # Step 2: Modify remaining trade on Account A with TP and SL
+        modify_response = await client.put(f"{vps_url_a}/positions/modify", json={
+            "ticket": remaining_ticket,
+            "tp": tp_price_a,
+            "sl": sl_price_a
+        }, timeout=30.0)
+        if modify_response.status_code != 200:
+            logger.warning(f"Failed to modify position: {modify_response.text}")
+            # Continue anyway - position is open, just without SL/TP
 
-            # Step 3: Open 2 trades on Account B
-            half_lots = round(lots / 2, 2)
-            tickets_b = []
+        # Step 3: Open 2 trades on Account B
+        half_lots = round(lots / 2, 2)
+        tickets_b = []
 
-            for i in range(2):
-                open_b_request = {
-                    "symbol": symbol,
-                    "lot": half_lots,
-                    "order_type": opposite_side,
-                    "tp": tp_price_b,
-                    "sl": sl_price_b,
-                    "comment": f"Versus-{versus_id}-B{i+1}"
-                }
-                open_b_response = await client.post(f"{vps_url_b}/positions/open", json=open_b_request)
+        for i in range(2):
+            open_b_request = {
+                "symbol": symbol,
+                "lot": half_lots,
+                "order_type": opposite_side,
+                "tp": tp_price_b,
+                "sl": sl_price_b,
+                "comment": f"Versus-{versus_id}-B{i+1}"
+            }
+            open_b_response = await client.post(f"{vps_url_b}/positions/open", json=open_b_request, timeout=30.0)
 
-                if open_b_response.status_code != 200:
-                    versus_manager.update_status(versus_id, VersusStatus.ERROR,
-                        error_message=f"Failed to open trade {i+1} on Account B")
-                    raise HTTPException(status_code=500, detail=f"Failed to open trade on Account B: {open_b_response.text}")
+            if open_b_response.status_code != 200:
+                versus_manager.update_status(versus_id, VersusStatus.ERROR,
+                    error_message=f"Failed to open trade {i+1} on Account B")
+                raise HTTPException(status_code=500, detail=f"Failed to open trade on Account B: {open_b_response.text}")
 
-                open_b_result = open_b_response.json()
-                if not open_b_result.get("success"):
-                    versus_manager.update_status(versus_id, VersusStatus.ERROR,
-                        error_message=f"Failed to open trade {i+1} on Account B: {open_b_result.get('message')}")
-                    raise HTTPException(status_code=500, detail=f"Failed to open trade on Account B")
+            open_b_result = open_b_response.json()
+            if not open_b_result.get("success"):
+                versus_manager.update_status(versus_id, VersusStatus.ERROR,
+                    error_message=f"Failed to open trade {i+1} on Account B: {open_b_result.get('message')}")
+                raise HTTPException(status_code=500, detail=f"Failed to open trade on Account B")
 
-                tickets_b.append(open_b_result.get("ticket"))
-                logger.info(f"Versus {versus_id}: Opened {opposite_side} on Account B with ticket {open_b_result.get('ticket')}")
+            tickets_b.append(open_b_result.get("ticket"))
+            logger.info(f"Versus {versus_id}: Opened {opposite_side} on Account B with ticket {open_b_result.get('ticket')}")
 
         # Update status to transferido
         updated_config = versus_manager.update_status(
@@ -1358,8 +1383,8 @@ async def execute_transferir(versus_id: str):
         )
 
         # Clear cache for both accounts
-        invalidate_account_cache(account_a)
-        invalidate_account_cache(account_b)
+        await invalidate_account_cache(account_a)
+        await invalidate_account_cache(account_b)
 
         return {
             "status": "success",

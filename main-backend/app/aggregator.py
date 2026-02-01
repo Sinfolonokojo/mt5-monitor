@@ -6,6 +6,7 @@ from datetime import datetime
 from .config import settings
 from .models import AccountData, VPSAgentStatus
 from .account_vps_cache import account_vps_cache
+from .http_client import get_http_client
 
 logger = logging.getLogger(__name__)
 
@@ -25,11 +26,11 @@ class DataAggregator:
 
         try:
             logger.info(f"🔄 Triggering refresh for {agent_name} at {agent_url}/refresh")
-            async with httpx.AsyncClient(timeout=30) as client:  # Longer timeout for refresh
-                response = await client.post(f"{agent_url}/refresh")
-                response.raise_for_status()
-                logger.info(f"✅ Successfully triggered refresh for {agent_name}")
-                return True
+            client = await get_http_client()
+            response = await client.post(f"{agent_url}/refresh", timeout=30.0)
+            response.raise_for_status()
+            logger.info(f"✅ Successfully triggered refresh for {agent_name}")
+            return True
         except Exception as e:
             logger.error(f"❌ Failed to trigger refresh for {agent_name}: {str(e)}")
             return False
@@ -40,46 +41,46 @@ class DataAggregator:
         agent_url = agent["url"]
 
         try:
-            async with httpx.AsyncClient(timeout=settings.AGENT_TIMEOUT) as client:
-                logger.info(f"Fetching from {agent_name} at {agent_url}")
-                response = await client.get(f"{agent_url}/accounts")
-                response.raise_for_status()
-                account_data = response.json()
+            client = await get_http_client()
+            logger.info(f"Fetching from {agent_name} at {agent_url}")
+            response = await client.get(f"{agent_url}/accounts", timeout=settings.AGENT_TIMEOUT)
+            response.raise_for_status()
+            account_data = response.json()
 
-                # In multi-terminal architecture, each agent returns a single account object
-                # Wrap it in a list for consistency with the aggregator
-                accounts = [account_data] if isinstance(account_data, dict) else account_data
+            # In multi-terminal architecture, each agent returns a single account object
+            # Wrap it in a list for consistency with the aggregator
+            accounts = [account_data] if isinstance(account_data, dict) else account_data
 
-                # Check if account is disconnected (status="disconnected")
-                if accounts and accounts[0].get("status") == "disconnected":
-                    logger.warning(f"⚠️ {agent_name} returned disconnected status")
+            # Check if account is disconnected (status="disconnected")
+            if accounts and accounts[0].get("status") == "disconnected":
+                logger.warning(f"⚠️ {agent_name} returned disconnected status")
 
-                    # Track failure
-                    self.agent_failure_counts[agent_name] = self.agent_failure_counts.get(agent_name, 0) + 1
+                # Track failure
+                self.agent_failure_counts[agent_name] = self.agent_failure_counts.get(agent_name, 0) + 1
 
-                    # Auto-recover if failure threshold reached
-                    if self.agent_failure_counts[agent_name] >= self.max_failures_before_recovery:
-                        logger.warning(f"🔧 Auto-recovery triggered for {agent_name} (failures: {self.agent_failure_counts[agent_name]})")
-                        recovery_success = await self.trigger_agent_refresh(agent)
+                # Auto-recover if failure threshold reached
+                if self.agent_failure_counts[agent_name] >= self.max_failures_before_recovery:
+                    logger.warning(f"🔧 Auto-recovery triggered for {agent_name} (failures: {self.agent_failure_counts[agent_name]})")
+                    recovery_success = await self.trigger_agent_refresh(agent)
 
-                        if recovery_success:
-                            # Reset failure count after successful recovery trigger
-                            self.agent_failure_counts[agent_name] = 0
+                    if recovery_success:
+                        # Reset failure count after successful recovery trigger
+                        self.agent_failure_counts[agent_name] = 0
 
-                            # Retry fetching data after refresh
-                            await asyncio.sleep(2)  # Wait for refresh to complete
-                            retry_response = await client.get(f"{agent_url}/accounts")
-                            retry_response.raise_for_status()
-                            retry_data = retry_response.json()
-                            accounts = [retry_data] if isinstance(retry_data, dict) else retry_data
-                            logger.info(f"✅ Retry successful for {agent_name} after recovery")
+                        # Retry fetching data after refresh
+                        await asyncio.sleep(2)  # Wait for refresh to complete
+                        retry_response = await client.get(f"{agent_url}/accounts", timeout=settings.AGENT_TIMEOUT)
+                        retry_response.raise_for_status()
+                        retry_data = retry_response.json()
+                        accounts = [retry_data] if isinstance(retry_data, dict) else retry_data
+                        logger.info(f"✅ Retry successful for {agent_name} after recovery")
 
-                    return agent_name, accounts, "online"
-                else:
-                    # Success - reset failure count
-                    self.agent_failure_counts[agent_name] = 0
-                    logger.info(f"Successfully fetched {len(accounts)} account(s) from {agent_name}")
-                    return agent_name, accounts, "online"
+                return agent_name, accounts, "online"
+            else:
+                # Success - reset failure count
+                self.agent_failure_counts[agent_name] = 0
+                logger.info(f"Successfully fetched {len(accounts)} account(s) from {agent_name}")
+                return agent_name, accounts, "online"
 
         except httpx.TimeoutException:
             logger.error(f"Timeout connecting to {agent_name} at {agent_url}")
@@ -183,13 +184,17 @@ class DataAggregator:
 
         # Fetch trade history from the agent
         try:
-            async with httpx.AsyncClient(timeout=settings.AGENT_TIMEOUT) as client:
-                logger.info(f"Fetching trade history from {target_agent} at {agent_config['url']}")
-                response = await client.get(f"{agent_config['url']}/trade-history", params=params)
-                response.raise_for_status()
-                trade_history = response.json()
-                logger.info(f"Successfully fetched {trade_history.get('total_trades', 0)} trades from {target_agent}")
-                return {**trade_history, "success": True}
+            client = await get_http_client()
+            logger.info(f"Fetching trade history from {target_agent} at {agent_config['url']}")
+            response = await client.get(
+                f"{agent_config['url']}/trade-history",
+                params=params,
+                timeout=settings.AGENT_TIMEOUT
+            )
+            response.raise_for_status()
+            trade_history = response.json()
+            logger.info(f"Successfully fetched {trade_history.get('total_trades', 0)} trades from {target_agent}")
+            return {**trade_history, "success": True}
 
         except httpx.TimeoutException:
             logger.error(f"Timeout fetching trade history from {target_agent}")
