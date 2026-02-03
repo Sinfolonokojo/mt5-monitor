@@ -1,12 +1,15 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useAccounts } from './hooks/useAccounts';
 import { useVersus } from './hooks/useVersus';
+import { useAuth } from './hooks/useAuth';
 import AccountsTable from './components/AccountsTable';
 import VersusTab from './components/versus/VersusTab';
+import LoginPage from './components/LoginPage';
 import './App.css';
 import './darkMode.css';
 
 function App() {
+  const { isAuthenticated, loading: authLoading, error: authError, login, logout } = useAuth();
   const { data, loading, error, fetchAccounts, refresh, refreshSingleAccount, updatePhase, updateVS } = useAccounts();
   const { featureEnabled: versusEnabled, checkFeatureStatus } = useVersus();
   const [editMode, setEditMode] = useState(false);
@@ -64,18 +67,22 @@ function App() {
   }, [darkMode]);
 
   useEffect(() => {
-    fetchAccounts();
-    checkFeatureStatus();
-  }, [fetchAccounts, checkFeatureStatus]);
+    if (isAuthenticated) {
+      fetchAccounts();
+      checkFeatureStatus();
+    }
+  }, [fetchAccounts, checkFeatureStatus, isAuthenticated]);
 
   // Silent auto-refresh every 10 minutes
   useEffect(() => {
+    if (!isAuthenticated) return;
+
     const timer = setInterval(() => {
       refresh();
     }, 600000); // 10 minutes
 
     return () => clearInterval(timer);
-  }, [refresh]);
+  }, [refresh, isAuthenticated]);
 
   const handlePhaseUpdate = async (accountNumber, phaseValue) => {
     await updatePhase(accountNumber, phaseValue);
@@ -84,6 +91,26 @@ function App() {
   const handleVSUpdate = async (accountNumber, vsValue) => {
     await updateVS(accountNumber, vsValue);
   };
+
+  // Show loading screen while checking auth
+  if (authLoading) {
+    return (
+      <div style={{
+        minHeight: '100vh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: '#f3f4f6'
+      }}>
+        <p style={{ color: '#6b7280', fontSize: '16px' }}>Loading...</p>
+      </div>
+    );
+  }
+
+  // Show login page if not authenticated
+  if (!isAuthenticated) {
+    return <LoginPage onLogin={login} loading={authLoading} error={authError} />;
+  }
 
   return (
     <div className="app-container">
@@ -115,6 +142,22 @@ function App() {
               </button>
             </>
           )}
+          <button
+            onClick={logout}
+            className="logout-button"
+            style={{
+              padding: '8px 16px',
+              backgroundColor: '#6b7280',
+              color: 'white',
+              border: 'none',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              fontSize: '14px',
+              marginLeft: '8px'
+            }}
+          >
+            Logout
+          </button>
         </div>
       </header>
 

@@ -8,6 +8,11 @@ class Settings(BaseSettings):
     API_PORT: int = 8080
     API_HOST: str = "0.0.0.0"
 
+    # Authentication settings
+    APP_PASSWORD: str = "changeme"  # Set in .env
+    SESSION_SECRET: str = "change-this-secret-key"  # Set in .env
+    TOKEN_EXPIRY_HOURS: int = 24
+
     # VPS Agents configuration (JSON string)
     VPS_AGENTS_JSON: str = "[]"
 
