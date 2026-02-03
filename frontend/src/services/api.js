@@ -1,10 +1,91 @@
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080';
+const TOKEN_KEY = 'mt5_auth_token';
 
 class ApiService {
+  // Auth methods
+  getToken() {
+    return localStorage.getItem(TOKEN_KEY);
+  }
+
+  setToken(token) {
+    localStorage.setItem(TOKEN_KEY, token);
+  }
+
+  clearToken() {
+    localStorage.removeItem(TOKEN_KEY);
+  }
+
+  getAuthHeaders() {
+    const token = this.getToken();
+    return token ? { 'Authorization': `Bearer ${token}` } : {};
+  }
+
+  async login(password) {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ password })
+      });
+
+      const data = await response.json();
+
+      if (response.ok && data.success) {
+        this.setToken(data.token);
+        return { success: true };
+      } else {
+        return { success: false, message: data.message || 'Login failed' };
+      }
+    } catch (error) {
+      console.error('Error logging in:', error);
+      return { success: false, message: 'Connection error' };
+    }
+  }
+
+  async logout() {
+    try {
+      await fetch(`${API_BASE_URL}/api/auth/logout`, {
+        method: 'POST',
+        headers: this.getAuthHeaders()
+      });
+    } catch (error) {
+      console.error('Error logging out:', error);
+    }
+    this.clearToken();
+  }
+
+  async verifyToken() {
+    const token = this.getToken();
+    if (!token) return false;
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/auth/verify`, {
+        headers: this.getAuthHeaders()
+      });
+
+      if (!response.ok) return false;
+
+      const data = await response.json();
+      return data.valid === true;
+    } catch (error) {
+      console.error('Error verifying token:', error);
+      return false;
+    }
+  }
+
   async fetchAccounts(forceRefresh = false) {
     try {
       const url = `${API_BASE_URL}/api/accounts${forceRefresh ? '?force_refresh=true' : ''}`;
-      const response = await fetch(url);
+      const response = await fetch(url, {
+        headers: this.getAuthHeaders()
+      });
+
+      if (response.status === 401) {
+        this.clearToken();
+        throw new Error('Unauthorized');
+      }
 
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
@@ -20,7 +101,14 @@ class ApiService {
 
   async fetchAgentsStatus() {
     try {
-      const response = await fetch(`${API_BASE_URL}/api/agents/status`);
+      const response = await fetch(`${API_BASE_URL}/api/agents/status`, {
+        headers: this.getAuthHeaders()
+      });
+
+      if (response.status === 401) {
+        this.clearToken();
+        throw new Error('Unauthorized');
+      }
 
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
@@ -39,9 +127,15 @@ class ApiService {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
+          ...this.getAuthHeaders()
         },
         body: JSON.stringify({ phase: phaseValue })
       });
+
+      if (response.status === 401) {
+        this.clearToken();
+        throw new Error('Unauthorized');
+      }
 
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
@@ -60,9 +154,15 @@ class ApiService {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
+          ...this.getAuthHeaders()
         },
         body: JSON.stringify({ vs_group: vsValue })
       });
+
+      if (response.status === 401) {
+        this.clearToken();
+        throw new Error('Unauthorized');
+      }
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -80,8 +180,14 @@ class ApiService {
   async forceRefresh() {
     try {
       const response = await fetch(`${API_BASE_URL}/api/refresh`, {
-        method: 'POST'
+        method: 'POST',
+        headers: this.getAuthHeaders()
       });
+
+      if (response.status === 401) {
+        this.clearToken();
+        throw new Error('Unauthorized');
+      }
 
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
@@ -97,8 +203,14 @@ class ApiService {
   async syncToGoogleSheets() {
     try {
       const response = await fetch(`${API_BASE_URL}/api/sync-to-sheets`, {
-        method: 'POST'
+        method: 'POST',
+        headers: this.getAuthHeaders()
       });
+
+      if (response.status === 401) {
+        this.clearToken();
+        throw new Error('Unauthorized');
+      }
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -116,7 +228,14 @@ class ApiService {
   async fetchTradeHistory(accountNumber, forceRefresh = false) {
     try {
       const url = `${API_BASE_URL}/api/accounts/${accountNumber}/trade-history${forceRefresh ? '?force_refresh=true' : ''}`;
-      const response = await fetch(url);
+      const response = await fetch(url, {
+        headers: this.getAuthHeaders()
+      });
+
+      if (response.status === 401) {
+        this.clearToken();
+        throw new Error('Unauthorized');
+      }
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -134,8 +253,14 @@ class ApiService {
   async syncTradesToGoogleSheets(accountNumber) {
     try {
       const response = await fetch(`${API_BASE_URL}/api/accounts/${accountNumber}/sync-trades-to-sheets`, {
-        method: 'POST'
+        method: 'POST',
+        headers: this.getAuthHeaders()
       });
+
+      if (response.status === 401) {
+        this.clearToken();
+        throw new Error('Unauthorized');
+      }
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -152,7 +277,14 @@ class ApiService {
 
   async fetchSingleAccount(accountNumber) {
     try {
-      const response = await fetch(`${API_BASE_URL}/api/accounts/${accountNumber}`);
+      const response = await fetch(`${API_BASE_URL}/api/accounts/${accountNumber}`, {
+        headers: this.getAuthHeaders()
+      });
+
+      if (response.status === 401) {
+        this.clearToken();
+        throw new Error('Unauthorized');
+      }
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -175,9 +307,15 @@ class ApiService {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          ...this.getAuthHeaders()
         },
         body: JSON.stringify(positionData)
       });
+
+      if (response.status === 401) {
+        this.clearToken();
+        throw new Error('Unauthorized');
+      }
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -198,9 +336,15 @@ class ApiService {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          ...this.getAuthHeaders()
         },
         body: JSON.stringify({ ticket, deviation })
       });
+
+      if (response.status === 401) {
+        this.clearToken();
+        throw new Error('Unauthorized');
+      }
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -221,9 +365,15 @@ class ApiService {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
+          ...this.getAuthHeaders()
         },
         body: JSON.stringify({ ticket, sl, tp })
       });
+
+      if (response.status === 401) {
+        this.clearToken();
+        throw new Error('Unauthorized');
+      }
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -240,7 +390,14 @@ class ApiService {
 
   async fetchOpenPositions(accountNumber) {
     try {
-      const response = await fetch(`${API_BASE_URL}/api/accounts/${accountNumber}/positions`);
+      const response = await fetch(`${API_BASE_URL}/api/accounts/${accountNumber}/positions`, {
+        headers: this.getAuthHeaders()
+      });
+
+      if (response.status === 401) {
+        this.clearToken();
+        throw new Error('Unauthorized');
+      }
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -259,7 +416,14 @@ class ApiService {
 
   async fetchVersusFeatureStatus() {
     try {
-      const response = await fetch(`${API_BASE_URL}/api/versus/feature-status`);
+      const response = await fetch(`${API_BASE_URL}/api/versus/feature-status`, {
+        headers: this.getAuthHeaders()
+      });
+
+      if (response.status === 401) {
+        this.clearToken();
+        throw new Error('Unauthorized');
+      }
 
       if (!response.ok) {
         // If 503, feature is disabled
@@ -278,7 +442,14 @@ class ApiService {
 
   async fetchVersusList() {
     try {
-      const response = await fetch(`${API_BASE_URL}/api/versus`);
+      const response = await fetch(`${API_BASE_URL}/api/versus`, {
+        headers: this.getAuthHeaders()
+      });
+
+      if (response.status === 401) {
+        this.clearToken();
+        throw new Error('Unauthorized');
+      }
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -299,9 +470,15 @@ class ApiService {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          ...this.getAuthHeaders()
         },
         body: JSON.stringify(config)
       });
+
+      if (response.status === 401) {
+        this.clearToken();
+        throw new Error('Unauthorized');
+      }
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -319,8 +496,14 @@ class ApiService {
   async executeCongelar(versusId) {
     try {
       const response = await fetch(`${API_BASE_URL}/api/versus/${versusId}/congelar`, {
-        method: 'POST'
+        method: 'POST',
+        headers: this.getAuthHeaders()
       });
+
+      if (response.status === 401) {
+        this.clearToken();
+        throw new Error('Unauthorized');
+      }
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -338,8 +521,14 @@ class ApiService {
   async executeTransferir(versusId) {
     try {
       const response = await fetch(`${API_BASE_URL}/api/versus/${versusId}/transferir`, {
-        method: 'POST'
+        method: 'POST',
+        headers: this.getAuthHeaders()
       });
+
+      if (response.status === 401) {
+        this.clearToken();
+        throw new Error('Unauthorized');
+      }
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -357,8 +546,14 @@ class ApiService {
   async cancelVersus(versusId) {
     try {
       const response = await fetch(`${API_BASE_URL}/api/versus/${versusId}`, {
-        method: 'DELETE'
+        method: 'DELETE',
+        headers: this.getAuthHeaders()
       });
+
+      if (response.status === 401) {
+        this.clearToken();
+        throw new Error('Unauthorized');
+      }
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));

@@ -4,8 +4,13 @@ from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
 import logging
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone
 import httpx
+import hmac
+import hashlib
+import base64
+import time
+from pydantic import BaseModel
 from .config import settings
 from .aggregator import data_aggregator
 from .cache import cache, smart_cache
@@ -24,6 +29,64 @@ from typing import List
 # Configure logging
 setup_logging(settings.LOG_LEVEL)
 logger = logging.getLogger(__name__)
+
+
+# Auth models
+class LoginRequest(BaseModel):
+    password: str
+
+
+class LoginResponse(BaseModel):
+    success: bool
+    token: str = None
+    message: str = None
+
+
+# Auth helper functions
+def generate_token() -> str:
+    """Generate a signed token with timestamp"""
+    timestamp = str(int(time.time()))
+    signature = hmac.new(
+        settings.SESSION_SECRET.encode(),
+        timestamp.encode(),
+        hashlib.sha256
+    ).hexdigest()
+    token_data = f"{timestamp}.{signature}"
+    return base64.b64encode(token_data.encode()).decode()
+
+
+def verify_token(token: str) -> bool:
+    """Verify a token's signature and expiration"""
+    try:
+        token_data = base64.b64decode(token.encode()).decode()
+        parts = token_data.split(".")
+        if len(parts) != 2:
+            return False
+
+        timestamp, signature = parts
+
+        # Verify signature
+        expected_signature = hmac.new(
+            settings.SESSION_SECRET.encode(),
+            timestamp.encode(),
+            hashlib.sha256
+        ).hexdigest()
+
+        if not hmac.compare_digest(signature, expected_signature):
+            return False
+
+        # Check expiration (24 hours default)
+        token_time = int(timestamp)
+        current_time = int(time.time())
+        expiry_seconds = settings.TOKEN_EXPIRY_HOURS * 3600
+
+        if current_time - token_time > expiry_seconds:
+            return False
+
+        return True
+    except Exception as e:
+        logger.warning(f"Token verification failed: {e}")
+        return False
 
 # Background task control
 scheduled_congelar_task = None
@@ -114,10 +177,64 @@ app.add_middleware(
 )
 
 
+# Auth middleware - must be BEFORE other middlewares (runs first)
+@app.middleware("http")
+async def auth_middleware(request: Request, call_next):
+    """Check authentication for protected endpoints"""
+    # Skip auth for OPTIONS requests (CORS preflight)
+    if request.method == "OPTIONS":
+        return await call_next(request)
+
+    # Skip auth for these paths
+    public_paths = [
+        "/",
+        "/api/auth/login",
+        "/api/auth/verify",
+        "/docs",
+        "/openapi.json",
+        "/redoc",
+    ]
+
+    path = request.url.path
+
+    # Skip auth for public paths
+    if path in public_paths or path.startswith("/docs") or path.startswith("/redoc"):
+        return await call_next(request)
+
+    # Check Authorization header
+    auth_header = request.headers.get("Authorization")
+
+    if not auth_header:
+        return JSONResponse(
+            status_code=401,
+            content={"detail": "Missing authorization header"}
+        )
+
+    if not auth_header.startswith("Bearer "):
+        return JSONResponse(
+            status_code=401,
+            content={"detail": "Invalid authorization header format"}
+        )
+
+    token = auth_header[7:]  # Remove "Bearer " prefix
+
+    if not verify_token(token):
+        return JSONResponse(
+            status_code=401,
+            content={"detail": "Invalid or expired token"}
+        )
+
+    return await call_next(request)
+
+
 # Trading safety middleware
 @app.middleware("http")
 async def trading_safety_middleware(request: Request, call_next):
     """Block trading requests when trading is disabled"""
+    # Skip for OPTIONS requests (CORS preflight)
+    if request.method == "OPTIONS":
+        return await call_next(request)
+
     if request.url.path.startswith("/api/accounts/") and "/trade/" in request.url.path:
         if not settings.TRADING_ENABLED:
             return JSONResponse(
@@ -144,6 +261,44 @@ async def root():
         "vps_agents": len(settings.VPS_AGENTS),
         "version": "1.0.0"
     }
+
+
+# Auth endpoints
+@app.post("/api/auth/login", response_model=LoginResponse)
+async def login(request: LoginRequest):
+    """Authenticate with password and receive session token"""
+    if request.password == settings.APP_PASSWORD:
+        token = generate_token()
+        logger.info("Successful login")
+        return LoginResponse(success=True, token=token, message="Login successful")
+    else:
+        logger.warning("Failed login attempt")
+        return JSONResponse(
+            status_code=401,
+            content={"success": False, "message": "Invalid password"}
+        )
+
+
+@app.post("/api/auth/logout")
+async def logout():
+    """Logout endpoint (client should clear token)"""
+    return {"success": True, "message": "Logged out successfully"}
+
+
+@app.get("/api/auth/verify")
+async def verify_auth(request: Request):
+    """Verify if current token is valid"""
+    auth_header = request.headers.get("Authorization")
+
+    if not auth_header or not auth_header.startswith("Bearer "):
+        return {"valid": False, "message": "No token provided"}
+
+    token = auth_header[7:]
+
+    if verify_token(token):
+        return {"valid": True, "message": "Token is valid"}
+    else:
+        return {"valid": False, "message": "Token is invalid or expired"}
 
 
 @app.get("/api/accounts", response_model=AggregatedResponse)
