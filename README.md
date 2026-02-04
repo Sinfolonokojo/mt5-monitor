@@ -16,13 +16,13 @@ The system follows a **distributed three-tier architecture** to ensure scalabili
 
 ### 2. Main Backend (FastAPI Aggregator)
 * **Deployment:** VPS1 (Coordinator Role).
-* **Communication:** Parallel asynchronous HTTP requests to all 23 nodes via `httpx`.
+* **Communication:** Parallel asynchronous HTTP requests to all multiple nodes via `httpx`.
 * **Persistence:** * `phases.json`: Persistent metadata for account status.
     * `trade_cache.json`: Incremental storage for historical trade data.
 * **Integration:** Google Sheets API via Service Account credentials.
 
 ### 3. VPS Agents (Local API)
-* **Deployment:** Distributed across 23 VPS servers (Port 8000).
+* **Deployment:** Distributed across multiple VPS servers (Port 8000).
 * **Role:** Direct interface with the `MetaTrader5` Python library.
 * **Logic:** Local MT5 terminal monitoring, account extraction, and health check reporting.
 
@@ -32,7 +32,7 @@ The system follows a **distributed three-tier architecture** to ensure scalabili
 
 | Component | Strategy |
 | :--- | :--- |
-| **Concurrency** | Parallel polling of all 23 nodes to minimize dashboard latency. |
+| **Concurrency** | Parallel polling of all multiple nodes to minimize dashboard latency. |
 | **Caching** | 60-second TTL (Time-To-Live) for account snapshots. |
 | **Trade History** | Incremental sync (only pulls new tickets since the last stored timestamp). |
 | **Recovery** | Automatic MT5 terminal reconnection logic within the agent service. |
