@@ -1,6 +1,6 @@
 # MT5 Distributed Monitoring System: Technical Overview
 
-This system is a distributed, high-concurrency monitoring solution designed to aggregate real-time data from MetaTrader 5 terminals across **23 VPS instances** into a centralized web dashboard.
+This system is a distributed, high-concurrency monitoring solution designed to aggregate real-time data from MetaTrader 5 terminals across **multiple VPS instances** into a centralized web dashboard.
 
 ## 🏗️ Architecture
 
