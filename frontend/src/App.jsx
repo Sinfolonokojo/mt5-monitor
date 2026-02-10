@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState } from 'react';
 import { useAccounts } from './hooks/useAccounts';
 import { useVersus } from './hooks/useVersus';
 import { useAuth } from './hooks/useAuth';
@@ -13,58 +13,9 @@ function App() {
   const { data, loading, error, fetchAccounts, refresh, refreshSingleAccount, updatePhase, updateVS } = useAccounts();
   const { featureEnabled: versusEnabled, checkFeatureStatus } = useVersus();
   const [editMode, setEditMode] = useState(false);
-  const [activeTab, setActiveTab] = useState('cuentas'); // 'cuentas' | 'versus'
-  const [darkMode, setDarkMode] = useState(() => {
-    // Initialize from localStorage or default to false
-    const saved = localStorage.getItem('darkMode');
-    return saved ? JSON.parse(saved) : false;
-  });
-
-  // Apply dark mode class to body and adjust inline styles
-  useEffect(() => {
-    if (darkMode) {
-      document.body.classList.add('dark-mode');
-
-      // Fix inline styles that don't respond to CSS overrides
-      const fixInlineStyles = () => {
-        // Fix table headers with dark text
-        document.querySelectorAll('th[style*="color"]').forEach(el => {
-          if (el.style.color.includes('374151') || el.style.color.includes('111827') || el.style.color.includes('6b7280')) {
-            el.style.color = '#f9fafb';
-          }
-        });
-
-        // Fix table header backgrounds in trade history modal
-        document.querySelectorAll('thead tr[style*="backgroundColor"]').forEach(el => {
-          if (el.style.backgroundColor.includes('f9fafb')) {
-            el.style.backgroundColor = '#1f2937';
-            el.style.borderBottom = '2px solid #374151';
-          }
-        });
-
-        // Fix any dark text in modals
-        document.querySelectorAll('[style*="color"]').forEach(el => {
-          const color = el.style.color;
-          if (color.includes('111827') || color.includes('374151') || color.includes('1f2937')) {
-            el.style.color = '#f9fafb';
-          } else if (color.includes('6b7280')) {
-            el.style.color = '#d1d5db';
-          }
-        });
-      };
-
-      // Run immediately and on DOM changes
-      fixInlineStyles();
-      const observer = new MutationObserver(fixInlineStyles);
-      observer.observe(document.body, { childList: true, subtree: true });
-
-      return () => observer.disconnect();
-    } else {
-      document.body.classList.remove('dark-mode');
-    }
-    // Save to localStorage
-    localStorage.setItem('darkMode', JSON.stringify(darkMode));
-  }, [darkMode]);
+  const [activeTab, setActiveTab] = useState('cuentas');
+  const [showUserMenu, setShowUserMenu] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -79,10 +30,14 @@ function App() {
 
     const timer = setInterval(() => {
       refresh();
-    }, 600000); // 10 minutes
+    }, 600000);
 
     return () => clearInterval(timer);
   }, [refresh, isAuthenticated]);
+
+  const handleTabChange = (tab) => {
+    setActiveTab(tab);
+  };
 
   const handlePhaseUpdate = async (accountNumber, phaseValue) => {
     await updatePhase(accountNumber, phaseValue);
@@ -100,9 +55,25 @@ function App() {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        backgroundColor: '#f3f4f6'
+        backgroundColor: 'var(--bg-dark)'
       }}>
-        <p style={{ color: '#6b7280', fontSize: '16px' }}>Loading...</p>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{
+            width: '40px',
+            height: '40px',
+            border: '3px solid var(--border-color)',
+            borderTopColor: 'var(--primary)',
+            borderRadius: '50%',
+            animation: 'spin 1s linear infinite',
+            margin: '0 auto 16px'
+          }} />
+          <p style={{ color: 'var(--text-secondary)', fontSize: '14px' }}>Cargando...</p>
+        </div>
+        <style>{`
+          @keyframes spin {
+            to { transform: rotate(360deg); }
+          }
+        `}</style>
       </div>
     );
   }
@@ -112,121 +83,291 @@ function App() {
     return <LoginPage onLogin={login} loading={authLoading} error={authError} />;
   }
 
+  // Calculate stats
+  const totalAccounts = data?.total_accounts || 0;
+  const accounts = data?.accounts || [];
+  const fase1Count = accounts.filter(a => a.phase === 'F1').length;
+  const fase2Count = accounts.filter(a => a.phase === 'F2').length;
+  const realCount = accounts.filter(a => a.phase === 'R').length;
+
   return (
-    <div className="app-container">
-      <header className="app-header">
-        <button
-          onClick={() => setDarkMode(!darkMode)}
-          className="dark-mode-toggle"
-          title={darkMode ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
-        >
-          {darkMode ? '☀️' : '🌙'}
-        </button>
-        <h1>MT5 Trading Accounts Monitor</h1>
-        <div className="header-controls">
+    <div className={`app-container ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
+      {/* Mobile Header */}
+      <div className="mobile-header">
+        <div className="mobile-header-logo">
+          Prop <span>Trade</span> Pro
+        </div>
+        <div className="mobile-header-actions">
           {activeTab === 'cuentas' && (
             <>
               <button
                 onClick={() => setEditMode(!editMode)}
-                className={`edit-mode-button ${editMode ? 'active' : ''}`}
+                className={`btn btn-sm ${editMode ? 'btn-primary' : 'btn-secondary'}`}
                 disabled={loading}
               >
-                {editMode ? 'Exit Edit Mode' : 'Edit Mode'}
+                {editMode ? '✓' : '✏️'}
               </button>
               <button
                 onClick={refresh}
                 disabled={loading}
-                className="refresh-button"
+                className="btn btn-sm btn-secondary"
               >
-                {loading ? 'Refreshing...' : 'Refresh Data'}
+                {loading ? '⏳' : '🔄'}
               </button>
             </>
           )}
-          <button
-            onClick={logout}
-            className="logout-button"
-            style={{
-              padding: '8px 16px',
-              backgroundColor: '#6b7280',
-              color: 'white',
-              border: 'none',
-              borderRadius: '4px',
-              cursor: 'pointer',
-              fontSize: '14px',
-              marginLeft: '8px'
-            }}
-          >
-            Logout
-          </button>
         </div>
-      </header>
+      </div>
 
-      {/* Tab Navigation */}
-      {versusEnabled && (
-        <nav style={{
+      {/* Sidebar (desktop only) */}
+      <aside className={`app-sidebar ${sidebarCollapsed ? 'collapsed' : ''}`}>
+        <div>
+          {/* Toggle Button & Logo */}
+          <div className="sidebar-header">
+            <button
+              className="sidebar-toggle"
+              onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+              title={sidebarCollapsed ? 'Expandir menú' : 'Colapsar menú'}
+            >
+              {sidebarCollapsed ? '☰' : '✕'}
+            </button>
+            {!sidebarCollapsed && (
+              <div className="sidebar-logo">
+                <h1>Prop <span>Trade</span> Pro</h1>
+                <div className="version">v2.4.1</div>
+              </div>
+            )}
+          </div>
+
+          {/* Navigation */}
+          <nav className="sidebar-nav">
+            <button
+              className={`nav-item ${activeTab === 'cuentas' ? 'active' : ''}`}
+              onClick={() => handleTabChange('cuentas')}
+              title="Dashboard"
+            >
+              <span className="icon">📊</span>
+              {!sidebarCollapsed && <span>Panel Principal</span>}
+            </button>
+            <button
+              className={`nav-item ${activeTab === 'versus' ? 'active' : ''}`}
+              onClick={() => handleTabChange('versus')}
+              title="Versus Trading"
+            >
+              <span className="icon">⚡</span>
+              {!sidebarCollapsed && <span>Versus Trading</span>}
+            </button>
+          </nav>
+        </div>
+
+        {/* User Section */}
+        <div className="sidebar-user-container">
+          <button
+            className="sidebar-user"
+            onClick={() => setShowUserMenu(!showUserMenu)}
+            title={sidebarCollapsed ? 'Administrador' : ''}
+          >
+            <div className="sidebar-user-avatar">👤</div>
+            {!sidebarCollapsed && (
+              <>
+                <div className="sidebar-user-info">
+                  <div className="sidebar-user-name">Administrador</div>
+                  <div className="sidebar-user-role">Cuenta Pro</div>
+                </div>
+                <span className={`sidebar-user-chevron ${showUserMenu ? 'open' : ''}`}>
+                  ▲
+                </span>
+              </>
+            )}
+          </button>
+          {showUserMenu && (
+            <div className="sidebar-user-menu">
+              <button className="sidebar-user-menu-item logout" onClick={logout}>
+                <span>🚪</span>
+                {!sidebarCollapsed && <span>Cerrar Sesión</span>}
+              </button>
+            </div>
+          )}
+        </div>
+      </aside>
+
+      {/* Main Content */}
+      <div className="app-main-wrapper">
+        {/* Desktop Top Stats Bar */}
+        <div className="top-stats-bar">
+          <div className="stat-card">
+            <div className="stat-card-header">
+              <span className="stat-card-label">Total Cuentas</span>
+              <span className="stat-card-icon">📋</span>
+            </div>
+            <div className="stat-card-value">
+              <span className="stat-card-number">{totalAccounts}</span>
+            </div>
+          </div>
+          <div className="stat-card">
+            <div className="stat-card-header">
+              <span className="stat-card-label">Fase 1</span>
+              <span className="stat-card-icon">🔵</span>
+            </div>
+            <div className="stat-card-value">
+              <span className="stat-card-number">{fase1Count}</span>
+            </div>
+          </div>
+          <div className="stat-card">
+            <div className="stat-card-header">
+              <span className="stat-card-label">Fase 2</span>
+              <span className="stat-card-icon">🟣</span>
+            </div>
+            <div className="stat-card-value">
+              <span className="stat-card-number">{fase2Count}</span>
+            </div>
+          </div>
+          <div className="stat-card">
+            <div className="stat-card-header">
+              <span className="stat-card-label">Fondeadas</span>
+              <span className="stat-card-icon">🟢</span>
+            </div>
+            <div className="stat-card-value">
+              <span className="stat-card-number">{realCount}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Mobile Stat Cards */}
+        <div className="mobile-stat-cards">
+          <div className="stat-card">
+            <div className="stat-card-header">
+              <span className="stat-card-label">Total</span>
+              <span className="stat-card-icon">📋</span>
+            </div>
+            <div className="stat-card-value">
+              <span className="stat-card-number">{totalAccounts}</span>
+            </div>
+          </div>
+          <div className="stat-card">
+            <div className="stat-card-header">
+              <span className="stat-card-label">Fase 1</span>
+              <span className="stat-card-icon">🔵</span>
+            </div>
+            <div className="stat-card-value">
+              <span className="stat-card-number">{fase1Count}</span>
+            </div>
+          </div>
+          <div className="stat-card">
+            <div className="stat-card-header">
+              <span className="stat-card-label">Fase 2</span>
+              <span className="stat-card-icon">🟣</span>
+            </div>
+            <div className="stat-card-value">
+              <span className="stat-card-number">{fase2Count}</span>
+            </div>
+          </div>
+          <div className="stat-card">
+            <div className="stat-card-header">
+              <span className="stat-card-label">Fondeadas</span>
+              <span className="stat-card-icon">🟢</span>
+            </div>
+            <div className="stat-card-value">
+              <span className="stat-card-number">{realCount}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Desktop Header with controls */}
+        <div className="desktop-header-controls" style={{
           display: 'flex',
-          gap: '0',
-          borderBottom: '1px solid #e5e7eb',
-          backgroundColor: darkMode ? '#1f2937' : '#f9fafb',
-          padding: '0 24px',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          padding: '16px 24px',
+          borderBottom: '1px solid var(--border-color)',
+          backgroundColor: 'var(--bg-surface)',
         }}>
-          <button
-            onClick={() => setActiveTab('cuentas')}
-            style={{
-              padding: '12px 24px',
-              border: 'none',
-              backgroundColor: 'transparent',
-              color: activeTab === 'cuentas' ? '#3b82f6' : (darkMode ? '#d1d5db' : '#6b7280'),
-              fontWeight: activeTab === 'cuentas' ? '600' : '400',
-              fontSize: '14px',
-              cursor: 'pointer',
-              borderBottom: activeTab === 'cuentas' ? '2px solid #3b82f6' : '2px solid transparent',
-              marginBottom: '-1px',
-              transition: 'all 0.2s',
-            }}
-          >
-            Cuentas
-          </button>
-          <button
-            onClick={() => setActiveTab('versus')}
-            style={{
-              padding: '12px 24px',
-              border: 'none',
-              backgroundColor: 'transparent',
-              color: activeTab === 'versus' ? '#3b82f6' : (darkMode ? '#d1d5db' : '#6b7280'),
-              fontWeight: activeTab === 'versus' ? '600' : '400',
-              fontSize: '14px',
-              cursor: 'pointer',
-              borderBottom: activeTab === 'versus' ? '2px solid #3b82f6' : '2px solid transparent',
-              marginBottom: '-1px',
-              transition: 'all 0.2s',
-            }}
-          >
-            Versus
-          </button>
-        </nav>
-      )}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <h2 style={{
+              color: 'var(--text-primary)',
+              fontSize: '18px',
+              fontWeight: '600',
+              margin: 0
+            }}>
+              {activeTab === 'cuentas' ? 'Cuentas Activas' : 'Versus Trading'}
+            </h2>
+            {activeTab === 'cuentas' && (
+              <span style={{
+                fontSize: '12px',
+                backgroundColor: 'rgba(19, 91, 236, 0.2)',
+                color: 'var(--primary)',
+                padding: '2px 8px',
+                borderRadius: '9999px',
+                fontFamily: 'var(--font-mono)'
+              }}>
+                {totalAccounts}
+              </span>
+            )}
+          </div>
 
-      <main className="app-main">
-        {activeTab === 'cuentas' ? (
-          <AccountsTable
-            data={data}
-            loading={loading}
-            error={error}
-            onRefresh={refresh}
-            onRefreshSingleAccount={refreshSingleAccount}
-            editMode={editMode}
-            onPhaseUpdate={handlePhaseUpdate}
-            onVSUpdate={handleVSUpdate}
-          />
-        ) : (
-          <VersusTab accounts={data?.accounts || []} />
-        )}
-      </main>
+          <div className="header-controls">
+            {activeTab === 'cuentas' && (
+              <>
+                <button
+                  onClick={() => setEditMode(!editMode)}
+                  className={`btn ${editMode ? 'btn-primary' : 'btn-secondary'}`}
+                  disabled={loading}
+                >
+                  {editMode ? '✓ Salir Edición' : '✏️ Modo Edición'}
+                </button>
+                <button
+                  onClick={refresh}
+                  disabled={loading}
+                  className="btn btn-secondary"
+                >
+                  {loading ? '⏳ Actualizando...' : '🔄 Actualizar'}
+                </button>
+              </>
+            )}
+          </div>
+        </div>
 
-      <footer className="app-footer">
-        <p>MT5 Accounts Monitoring System - {new Date().getFullYear()}</p>
-      </footer>
+        {/* Main Content Area */}
+        <main className="app-main">
+          {activeTab === 'cuentas' ? (
+            <AccountsTable
+              data={data}
+              loading={loading}
+              error={error}
+              onRefresh={refresh}
+              onRefreshSingleAccount={refreshSingleAccount}
+              editMode={editMode}
+              onPhaseUpdate={handlePhaseUpdate}
+              onVSUpdate={handleVSUpdate}
+            />
+          ) : (
+            <VersusTab accounts={data?.accounts || []} />
+          )}
+        </main>
+
+        {/* Footer */}
+        <footer className="app-footer">
+          <p>Sistema de Monitoreo de Cuentas MT5 - {new Date().getFullYear()}</p>
+        </footer>
+      </div>
+
+      {/* Mobile Bottom Navigation */}
+      <nav className="mobile-bottom-nav">
+        <button
+          className={`mobile-nav-item ${activeTab === 'cuentas' ? 'active' : ''}`}
+          onClick={() => handleTabChange('cuentas')}
+        >
+          <span className="nav-icon">📊</span>
+          <span>Dashboard</span>
+        </button>
+        <button
+          className={`mobile-nav-item ${activeTab === 'versus' ? 'active' : ''}`}
+          onClick={() => handleTabChange('versus')}
+        >
+          <span className="nav-icon">⚡</span>
+          <span>Versus</span>
+        </button>
+      </nav>
     </div>
   );
 }

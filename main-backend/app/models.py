@@ -97,14 +97,15 @@ class VersusConfig(BaseModel):
     symbol: str
     lots: float
     side: str  # "BUY" or "SELL" - Account A's direction
-    tp_pips_a: float  # Take Profit in pips for Account A
-    sl_pips_a: float  # Stop Loss in pips for Account A
-    tp_pips_b: float  # Take Profit in pips for Account B
-    sl_pips_b: float  # Stop Loss in pips for Account B
+    tp_usd_a: float  # Take Profit in USD for Account A
+    sl_usd_a: float  # Stop Loss in USD for Account A
+    tp_usd_b: float  # Take Profit in USD for Account B
+    sl_usd_b: float  # Stop Loss in USD for Account B
     status: VersusStatus = VersusStatus.PENDING
     created_at: datetime
     updated_at: datetime
     scheduled_congelar: Optional[datetime] = None  # Optional scheduled time for congelar
+    scheduled_transferir: Optional[datetime] = None  # Optional scheduled time for transferir
     tickets_a: List[int] = []  # Trade tickets on Account A
     tickets_b: List[int] = []  # Trade tickets on Account B
     error_message: Optional[str] = None
@@ -117,8 +118,13 @@ class CreateVersusRequest(BaseModel):
     symbol: str = "EURUSD"
     lots: float
     side: str  # "BUY" or "SELL"
-    tp_pips_a: float  # Take Profit in pips for Account A
-    sl_pips_a: float  # Stop Loss in pips for Account A
-    tp_pips_b: float  # Take Profit in pips for Account B
-    sl_pips_b: float  # Stop Loss in pips for Account B
+    tp_usd_a: float  # Take Profit in USD for Account A
+    sl_usd_a: float  # Stop Loss in USD for Account A
+    tp_usd_b: float  # Take Profit in USD for Account B
+    sl_usd_b: float  # Stop Loss in USD for Account B
     scheduled_congelar: Optional[datetime] = None
+    scheduled_transferir: Optional[datetime] = None
+    holder_a: Optional[str] = ""
+    prop_firm_a: Optional[str] = ""
+    holder_b: Optional[str] = ""
+    prop_firm_b: Optional[str] = ""

@@ -22,6 +22,7 @@ from .google_sheets_service import google_sheets_service
 from .trade_cache_manager import trade_cache_manager
 from .account_vps_cache import account_vps_cache
 from .trade_logger import trade_logger
+from .telegram_service import telegram_service
 from .models import AggregatedResponse, VPSAgentStatus, AccountData, PhaseUpdateRequest, VSUpdateRequest, TradeHistoryResponse, CreateVersusRequest, VersusStatus, VersusConfig
 from .utils import setup_logging
 from typing import List
@@ -88,14 +89,29 @@ def verify_token(token: str) -> bool:
         logger.warning(f"Token verification failed: {e}")
         return False
 
+async def get_account_label(account_number: int, versus_config: dict = None, ab: str = None) -> str:
+    """Build a label like 'FN - John Doe' from versus config or cached account data."""
+    # Prefer versus config (always available, set at creation)
+    if versus_config and ab in ("a", "b"):
+        holder = versus_config.get(f"holder_{ab}", "")
+        prop_firm = versus_config.get(f"prop_firm_{ab}", "")
+        if holder and prop_firm:
+            return f"{prop_firm} - {holder}"
+    # Fallback: try cache
+    account = await smart_cache.get_account(account_number)
+    if account and account.prop_firm and account.account_holder:
+        return f"{account.prop_firm} - {account.account_holder}"
+    return str(account_number)
+
+
 # Background task control
-scheduled_congelar_task = None
+scheduled_versus_task = None
 shutdown_event = asyncio.Event()
 
 
-async def check_scheduled_congelar():
-    """Background task that checks for pending scheduled congelar and executes them"""
-    logger.info("Starting scheduled congelar checker (every 30 seconds)")
+async def check_scheduled_versus():
+    """Background task that checks for pending scheduled congelar and transferir, and executes them"""
+    logger.info("Starting scheduled versus checker (every 30 seconds)")
 
     while not shutdown_event.is_set():
         try:
@@ -107,41 +123,73 @@ async def check_scheduled_congelar():
             if not settings.VERSUS_ENABLED:
                 continue
 
-            # Get pending scheduled versus configs
-            pending = versus_manager.get_pending_scheduled()
+            # Check scheduled congelar
+            pending_congelar = versus_manager.get_pending_scheduled()
 
-            if pending:
-                logger.info(f"Found {len(pending)} scheduled congelar(s) ready to execute")
+            if pending_congelar:
+                logger.info(f"Found {len(pending_congelar)} scheduled congelar(s) ready to execute")
 
-            for config in pending:
+            for config in pending_congelar:
                 versus_id = config["id"]
                 logger.info(f"Executing scheduled Congelar for Versus {versus_id}")
 
                 try:
-                    # Execute congelar via internal call
                     await execute_congelar_internal(versus_id)
                     logger.info(f"Scheduled Congelar completed for Versus {versus_id}")
                 except Exception as e:
                     logger.error(f"Failed scheduled Congelar for Versus {versus_id}: {str(e)}")
                     versus_manager.update_status(versus_id, VersusStatus.ERROR, error_message=str(e))
+                    try:
+                        label_a = await get_account_label(config.get("account_a", 0), config, "a")
+                        label_b = await get_account_label(config.get("account_b", 0), config, "b")
+                        await telegram_service.notify_congelar_failed(
+                            versus_id, label_a, label_b, str(e)
+                        )
+                    except Exception:
+                        pass
+
+            # Check scheduled transferir
+            pending_transferir = versus_manager.get_pending_scheduled_transferir()
+
+            if pending_transferir:
+                logger.info(f"Found {len(pending_transferir)} scheduled transferir(s) ready to execute")
+
+            for config in pending_transferir:
+                versus_id = config["id"]
+                logger.info(f"Executing scheduled Transferir for Versus {versus_id}")
+
+                try:
+                    await execute_transferir_internal(versus_id)
+                    logger.info(f"Scheduled Transferir completed for Versus {versus_id}")
+                except Exception as e:
+                    logger.error(f"Failed scheduled Transferir for Versus {versus_id}: {str(e)}")
+                    versus_manager.update_status(versus_id, VersusStatus.ERROR, error_message=str(e))
+                    try:
+                        label_a = await get_account_label(config.get("account_a", 0), config, "a")
+                        label_b = await get_account_label(config.get("account_b", 0), config, "b")
+                        await telegram_service.notify_transferir_failed(
+                            versus_id, label_a, label_b, str(e)
+                        )
+                    except Exception:
+                        pass
 
         except Exception as e:
-            logger.error(f"Error in scheduled congelar checker: {str(e)}")
+            logger.error(f"Error in scheduled versus checker: {str(e)}")
 
-    logger.info("Scheduled congelar checker stopped")
+    logger.info("Scheduled versus checker stopped")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global scheduled_congelar_task
+    global scheduled_versus_task
 
     # Startup
     logger.info("Starting Main Backend")
 
-    # Start background task for scheduled congelar
+    # Start background task for scheduled congelar/transferir
     if settings.VERSUS_ENABLED:
-        scheduled_congelar_task = asyncio.create_task(check_scheduled_congelar())
-        logger.info("Scheduled congelar checker started")
+        scheduled_versus_task = asyncio.create_task(check_scheduled_versus())
+        logger.info("Scheduled versus checker started")
 
     yield
 
@@ -149,11 +197,11 @@ async def lifespan(app: FastAPI):
     logger.info("Shutting down Main Backend")
     shutdown_event.set()
 
-    if scheduled_congelar_task:
+    if scheduled_versus_task:
         try:
-            await asyncio.wait_for(scheduled_congelar_task, timeout=5.0)
+            await asyncio.wait_for(scheduled_versus_task, timeout=5.0)
         except asyncio.TimeoutError:
-            logger.warning("Scheduled congelar task did not finish in time")
+            logger.warning("Scheduled versus task did not finish in time")
 
     # Close HTTP client pool
     await close_http_client()
@@ -175,6 +223,28 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# Helper function to create CORS-enabled error responses
+def cors_error_response(status_code: int, detail: str, request: Request) -> JSONResponse:
+    """Create a JSONResponse with CORS headers for error responses"""
+    origin = request.headers.get("origin", "*")
+    # Check if origin is allowed
+    if "*" in settings.ALLOWED_ORIGINS or origin in settings.ALLOWED_ORIGINS:
+        allowed_origin = origin
+    else:
+        allowed_origin = settings.ALLOWED_ORIGINS[0] if settings.ALLOWED_ORIGINS else "*"
+
+    return JSONResponse(
+        status_code=status_code,
+        content={"detail": detail},
+        headers={
+            "Access-Control-Allow-Origin": allowed_origin,
+            "Access-Control-Allow-Credentials": "true",
+            "Access-Control-Allow-Methods": "*",
+            "Access-Control-Allow-Headers": "*",
+        }
+    )
 
 
 # Auth middleware - must be BEFORE other middlewares (runs first)
@@ -205,24 +275,15 @@ async def auth_middleware(request: Request, call_next):
     auth_header = request.headers.get("Authorization")
 
     if not auth_header:
-        return JSONResponse(
-            status_code=401,
-            content={"detail": "Missing authorization header"}
-        )
+        return cors_error_response(401, "Missing authorization header", request)
 
     if not auth_header.startswith("Bearer "):
-        return JSONResponse(
-            status_code=401,
-            content={"detail": "Invalid authorization header format"}
-        )
+        return cors_error_response(401, "Invalid authorization header format", request)
 
     token = auth_header[7:]  # Remove "Bearer " prefix
 
     if not verify_token(token):
-        return JSONResponse(
-            status_code=401,
-            content={"detail": "Invalid or expired token"}
-        )
+        return cors_error_response(401, "Invalid or expired token", request)
 
     return await call_next(request)
 
@@ -237,16 +298,18 @@ async def trading_safety_middleware(request: Request, call_next):
 
     if request.url.path.startswith("/api/accounts/") and "/trade/" in request.url.path:
         if not settings.TRADING_ENABLED:
-            return JSONResponse(
-                status_code=503,
-                content={"detail": "Trading is currently disabled. Set TRADING_ENABLED=true in .env to enable."}
+            return cors_error_response(
+                503,
+                "Trading is currently disabled. Set TRADING_ENABLED=true in .env to enable.",
+                request
             )
     # Block versus requests when versus feature is disabled
     if request.url.path.startswith("/api/versus"):
         if not settings.VERSUS_ENABLED:
-            return JSONResponse(
-                status_code=503,
-                content={"detail": "Versus feature is disabled. Set VERSUS_ENABLED=true in .env to enable."}
+            return cors_error_response(
+                503,
+                "Versus feature is disabled. Set VERSUS_ENABLED=true in .env to enable.",
+                request
             )
     response = await call_next(request)
     return response
@@ -1035,6 +1098,17 @@ async def get_account_positions(account_number: int):
         client = await get_http_client()
         response = await client.get(f"{vps_url}/positions", timeout=30.0)
 
+        if response.status_code == 404:
+            # Handle 404 gracefully - endpoint might not exist in older VPS agent versions
+            # or MT5 might not be connected - return empty positions
+            logger.warning(f"VPS agent returned 404 for positions endpoint, returning empty positions for account {account_number}")
+            return {
+                "account_number": account_number,
+                "positions": [],
+                "total_profit": 0.0,
+                "position_count": 0
+            }
+
         if response.status_code != 200:
             raise HTTPException(
                 status_code=response.status_code,
@@ -1047,6 +1121,24 @@ async def get_account_positions(account_number: int):
 
     except HTTPException:
         raise
+    except httpx.TimeoutException:
+        # Handle timeout gracefully - VPS agent might be slow or unresponsive
+        logger.warning(f"Timeout fetching positions for account {account_number}, returning empty positions")
+        return {
+            "account_number": account_number,
+            "positions": [],
+            "total_profit": 0.0,
+            "position_count": 0
+        }
+    except httpx.ConnectError:
+        # Handle connection error gracefully - VPS agent might be down
+        logger.warning(f"Connection error fetching positions for account {account_number}, returning empty positions")
+        return {
+            "account_number": account_number,
+            "positions": [],
+            "total_profit": 0.0,
+            "position_count": 0
+        }
     except Exception as e:
         logger.error(f"Error fetching positions: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to fetch positions: {str(e)}")
@@ -1091,11 +1183,16 @@ async def create_versus(request: CreateVersusRequest):
             symbol=request.symbol,
             lots=request.lots,
             side=request.side,
-            tp_pips_a=request.tp_pips_a,
-            sl_pips_a=request.sl_pips_a,
-            tp_pips_b=request.tp_pips_b,
-            sl_pips_b=request.sl_pips_b,
-            scheduled_congelar=request.scheduled_congelar
+            tp_usd_a=request.tp_usd_a,
+            sl_usd_a=request.sl_usd_a,
+            tp_usd_b=request.tp_usd_b,
+            sl_usd_b=request.sl_usd_b,
+            scheduled_congelar=request.scheduled_congelar,
+            scheduled_transferir=request.scheduled_transferir,
+            holder_a=request.holder_a or "",
+            prop_firm_a=request.prop_firm_a or "",
+            holder_b=request.holder_b or "",
+            prop_firm_b=request.prop_firm_b or "",
         )
 
         return {"status": "success", "versus": config}
@@ -1115,12 +1212,7 @@ async def delete_versus(versus_id: str):
         if not config:
             raise HTTPException(status_code=404, detail=f"Versus {versus_id} not found")
 
-        # Only allow deletion of pending, congelado, or error status
-        if config["status"] not in [VersusStatus.PENDING.value, VersusStatus.CONGELADO.value, VersusStatus.ERROR.value]:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Cannot delete Versus in {config['status']} status. Only pending, congelado, or error Versus can be deleted."
-            )
+        # All statuses can be deleted
 
         success = versus_manager.delete(versus_id)
         if success:
@@ -1174,55 +1266,40 @@ async def execute_congelar_internal(versus_id: str) -> dict:
     vps_url = agent_config["url"]
     tickets_a = []
 
-    # Get TP/SL config for Account A
-    tp_pips_a = config["tp_pips_a"]
-    sl_pips_a = config["sl_pips_a"]
-
-    # Determine pip value based on symbol type
-    symbol_upper = symbol.upper()
-    if "JPY" in symbol_upper:
-        pip_value = 0.01
-        decimals = 3
-    elif symbol_upper.startswith(("BTC", "ETH", "XRP", "LTC", "BCH")):
-        # Crypto pairs use different pip values
-        pip_value = 1.0 if symbol_upper.startswith(("BTC", "ETH")) else 0.01
-        decimals = 2
-    elif symbol_upper.startswith(("XAU", "XAG")):
-        # Metals
-        pip_value = 0.01
-        decimals = 2
-    else:
-        pip_value = 0.0001
-        decimals = 5
+    # Get TP/SL config for Account A (in USD)
+    tp_usd_a = config["tp_usd_a"]
+    sl_usd_a = config["sl_usd_a"]
 
     client = await get_http_client()
 
-    # First get current price to calculate TP/SL
+    # Get current price and tick value to calculate TP/SL
     quote_response = await client.get(f"{vps_url}/quote/{symbol}", timeout=30.0)
     if quote_response.status_code != 200:
         raise Exception(f"Failed to get quote for {symbol}")
 
     quote_data = quote_response.json()
-    ask_price = quote_data.get("ask")
-    bid_price = quote_data.get("bid")
+    trade_tick_value = quote_data.get("trade_tick_value", 1.0)
+    point = quote_data.get("point", 0.00001)
+    pip_value = quote_data.get("pip_value", 0.0001)
 
-    # Calculate TP/SL for BUY (enters at ask)
-    buy_tp = round(ask_price + (tp_pips_a * pip_value), decimals)
-    buy_sl = round(ask_price - (sl_pips_a * pip_value), decimals)
+    # Convert USD to pips (VPS agent open_position expects pips, not price levels)
+    pips_per_point = pip_value / point  # e.g., 10 for 5-digit broker
+    usd_per_pip = trade_tick_value * pips_per_point * lots
+    if usd_per_pip <= 0:
+        raise Exception(f"Invalid pip value calculation for {symbol}")
 
-    # Calculate TP/SL for SELL (enters at bid)
-    sell_tp = round(bid_price - (tp_pips_a * pip_value), decimals)
-    sell_sl = round(bid_price + (sl_pips_a * pip_value), decimals)
+    tp_pips = tp_usd_a / usd_per_pip
+    sl_pips = sl_usd_a / usd_per_pip
 
-    logger.info(f"Versus {versus_id}: BUY TP={buy_tp}, SL={buy_sl} | SELL TP={sell_tp}, SL={sell_sl}")
+    logger.info(f"Versus {versus_id}: USD TP=${tp_usd_a}, SL=${sl_usd_a} -> {tp_pips:.1f} pips TP, {sl_pips:.1f} pips SL (usd_per_pip={usd_per_pip:.4f})")
 
-    # Open BUY position with TP/SL included
+    # Open BUY position with TP/SL in pips
     buy_request = {
         "symbol": symbol,
         "lot": lots,
         "order_type": "BUY",
-        "tp": buy_tp,
-        "sl": buy_sl,
+        "tp": round(tp_pips, 1),
+        "sl": round(sl_pips, 1),
         "comment": f"Versus-{versus_id}-BUY"
     }
     buy_response = await client.post(f"{vps_url}/positions/open", json=buy_request, timeout=30.0)
@@ -1238,13 +1315,13 @@ async def execute_congelar_internal(versus_id: str) -> dict:
     tickets_a.append(buy_ticket)
     logger.info(f"Versus {versus_id}: BUY opened with ticket {buy_ticket} (TP/SL included)")
 
-    # Open SELL position with TP/SL included
+    # Open SELL position with TP/SL in pips (same values, VPS agent handles direction)
     sell_request = {
         "symbol": symbol,
         "lot": lots,
         "order_type": "SELL",
-        "tp": sell_tp,
-        "sl": sell_sl,
+        "tp": round(tp_pips, 1),
+        "sl": round(sl_pips, 1),
         "comment": f"Versus-{versus_id}-SELL"
     }
     sell_response = await client.post(f"{vps_url}/positions/open", json=sell_request, timeout=30.0)
@@ -1282,6 +1359,17 @@ async def execute_congelar_internal(versus_id: str) -> dict:
     # Clear cache for account A
     await invalidate_account_cache(account_a)
 
+    # Fire-and-forget notification
+    try:
+        label_a = await get_account_label(account_a, config, "a")
+        label_b = await get_account_label(config["account_b"], config, "b")
+        await telegram_service.notify_congelar_success(
+            versus_id, label_a, label_b,
+            symbol, lots, tp_usd_a, sl_usd_a
+        )
+    except Exception:
+        pass
+
     return {
         "status": "success",
         "message": f"Congelado: BUY and SELL opened on Account A",
@@ -1303,8 +1391,279 @@ async def execute_congelar(versus_id: str):
         return result
     except Exception as e:
         logger.error(f"Error executing Congelar: {str(e)}")
+        config = versus_manager.get(versus_id)
         versus_manager.update_status(versus_id, VersusStatus.ERROR, error_message=str(e))
+        try:
+            label_a = await get_account_label(config["account_a"], config, "a") if config else "0"
+            label_b = await get_account_label(config["account_b"], config, "b") if config else "0"
+            await telegram_service.notify_congelar_failed(
+                versus_id, label_a, label_b, str(e)
+            )
+        except Exception:
+            pass
         raise HTTPException(status_code=500, detail=str(e))
+
+
+async def execute_transferir_internal(versus_id: str) -> dict:
+    """
+    Internal function to execute Transferir step.
+    Can be called from API endpoint or background scheduler.
+    Raises Exception on failure (not HTTPException).
+    """
+    config = versus_manager.get(versus_id)
+    if not config:
+        raise Exception(f"Versus {versus_id} not found")
+
+    if config["status"] != VersusStatus.CONGELADO.value:
+        raise Exception(f"Cannot transferir Versus in {config['status']} status. Must be congelado.")
+
+    account_a = config["account_a"]
+    account_b = config["account_b"]
+    symbol = config["symbol"]
+    lots = config["lots"]
+    side = config["side"]  # Account A's direction
+    tp_usd_a = config["tp_usd_a"]
+    sl_usd_a = config["sl_usd_a"]
+    tp_usd_b = config["tp_usd_b"]
+    sl_usd_b = config["sl_usd_b"]
+    tickets_a = config["tickets_a"]
+
+    if len(tickets_a) != 2:
+        raise Exception(f"Expected 2 tickets on Account A, found {len(tickets_a)}")
+
+    logger.info(f"Executing Transferir for Versus {versus_id}")
+
+    # Find VPS for accounts
+    vps_a = account_vps_cache.get(account_a)
+    vps_b = account_vps_cache.get(account_b)
+
+    if not vps_a or not vps_b:
+        await data_aggregator.fetch_all_agents()
+        vps_a = account_vps_cache.get(account_a)
+        vps_b = account_vps_cache.get(account_b)
+
+    if not vps_a:
+        raise Exception(f"Account {account_a} not found")
+    if not vps_b:
+        raise Exception(f"Account {account_b} not found")
+
+    # Get VPS configs
+    agent_config_a = None
+    agent_config_b = None
+    for agent in settings.VPS_AGENTS:
+        if agent.get("name") == vps_a:
+            agent_config_a = agent
+        if agent.get("name") == vps_b:
+            agent_config_b = agent
+
+    if not agent_config_a:
+        raise Exception(f"VPS config not found for {vps_a}")
+    if not agent_config_b:
+        raise Exception(f"VPS config not found for {vps_b}")
+
+    vps_url_a = agent_config_a["url"]
+    vps_url_b = agent_config_b["url"]
+
+    client = await get_http_client()
+
+    # Congelar always stores tickets_a as [buy_ticket, sell_ticket]
+    buy_ticket = int(tickets_a[0])
+    sell_ticket = int(tickets_a[1])
+    logger.info(f"Versus {versus_id}: BUY ticket={buy_ticket}, SELL ticket={sell_ticket}")
+
+    # Try to get positions for commission data (non-fatal if it fails)
+    positions = []
+    try:
+        positions_response = await client.get(f"{vps_url_a}/positions", timeout=30.0)
+        if positions_response.status_code == 200:
+            positions_data = positions_response.json()
+            positions = positions_data.get("positions", [])
+            logger.info(f"Versus {versus_id}: Account A returned {len(positions)} positions")
+        else:
+            logger.warning(f"Versus {versus_id}: Failed to get positions (status {positions_response.status_code}), commission will be 0")
+    except Exception as e:
+        logger.warning(f"Versus {versus_id}: Failed to get positions: {e}, commission will be 0")
+
+    # Determine decimals based on symbol type
+    symbol_upper = symbol.upper()
+    if "JPY" in symbol_upper:
+        decimals = 3
+    elif symbol_upper.startswith(("BTC", "ETH", "XRP", "LTC", "BCH", "XAU", "XAG")):
+        decimals = 2
+    else:
+        decimals = 5
+
+    # Fetch quote from broker (includes trade_tick_value for USD conversion)
+    quote_response = await client.get(f"{vps_url_a}/quote/{symbol}", timeout=30.0)
+    if quote_response.status_code != 200:
+        raise Exception(f"Failed to get quote for {symbol}")
+
+    quote_data = quote_response.json()
+    spread_pips = quote_data.get("spread_pips", 0)
+    trade_tick_value = quote_data.get("trade_tick_value", 1.0)
+    point = quote_data.get("point", 0.00001)
+    pip_value = quote_data.get("pip_value", 0.0001)
+
+    # Get current price from quote (bid for BUY side, ask for SELL side)
+    current_bid = quote_data.get("bid", 0)
+    current_ask = quote_data.get("ask", 0)
+    current_price = current_bid if side == "BUY" else current_ask
+    logger.info(f"Versus {versus_id}: Current spread for {symbol}: {spread_pips} pips, bid={current_bid}, ask={current_ask}, using price={current_price} for side={side}")
+
+    if current_price <= 0:
+        raise Exception(f"Invalid current price from quote: bid={current_bid}, ask={current_ask}")
+
+    # Convert USD to pips
+    pips_per_point = pip_value / point  # e.g., 10 for 5-digit broker
+    usd_per_pip = trade_tick_value * pips_per_point * lots
+    if usd_per_pip <= 0:
+        raise Exception(f"Invalid pip value calculation for {symbol}")
+
+    # Get per-lot commission from Account A's positions
+    commission_per_lot = 0.0
+    for p in positions:
+        if p.get("commission", 0) != 0:
+            commission_per_lot = abs(p["commission"]) / p.get("volume", lots)
+            break
+
+    # Forward commission = Account B open + close (2 sides × commission_per_lot × lots)
+    total_forward_commission_usd = commission_per_lot * lots * 2
+    commission_pips = total_forward_commission_usd / usd_per_pip if usd_per_pip > 0 else 0
+
+    logger.info(f"Versus {versus_id}: Commission per lot: ${commission_per_lot}, total forward: ${total_forward_commission_usd}, in pips: {commission_pips}")
+
+    tp_pips_b = tp_usd_b / usd_per_pip
+    sl_pips_b = sl_usd_b / usd_per_pip
+
+    # Calculate TP and SL based on side
+    # Account A modify_position expects PRICE LEVELS
+    # Account B open_position expects PIPS
+    if side == "BUY":
+        # Account A keeps BUY, close SELL
+        ticket_to_close = sell_ticket
+        remaining_ticket = buy_ticket
+
+        # BUY: subtract spread and commission (TP closer to market price)
+        new_tp_pips_a = sl_pips_b - spread_pips - commission_pips
+        new_sl_pips_a = tp_pips_b - spread_pips - commission_pips
+        tp_price_a = round(current_price + (new_tp_pips_a * pip_value), decimals)
+        sl_price_a = round(current_price - (new_sl_pips_a * pip_value), decimals)
+
+        # Account B opens SELL (opposite) with adjusted TP/SL in PIPS
+        opposite_side = "SELL"
+        tp_pips_b_send = round(tp_pips_b - spread_pips - commission_pips, 1)
+        sl_pips_b_send = round(sl_pips_b - spread_pips - commission_pips, 1)
+    else:  # SELL
+        # Account A keeps SELL, close BUY
+        ticket_to_close = buy_ticket
+        remaining_ticket = sell_ticket
+
+        # SELL: add spread, subtract commission
+        new_tp_pips_a = sl_pips_b + spread_pips - commission_pips
+        new_sl_pips_a = tp_pips_b + spread_pips - commission_pips
+        tp_price_a = round(current_price - (new_tp_pips_a * pip_value), decimals)
+        sl_price_a = round(current_price + (new_sl_pips_a * pip_value), decimals)
+
+        # Account B opens BUY (opposite) with adjusted TP/SL in PIPS
+        opposite_side = "BUY"
+        tp_pips_b_send = round(tp_pips_b + spread_pips - commission_pips, 1)
+        sl_pips_b_send = round(sl_pips_b + spread_pips - commission_pips, 1)
+
+    logger.info(f"Versus {versus_id}: Closing ticket {ticket_to_close}, keeping {remaining_ticket}")
+    logger.info(f"Account A TP: {tp_price_a}, SL: {sl_price_a} (modify with price levels)")
+    logger.info(f"Account B ({opposite_side}) TP: {tp_pips_b_send} pips, SL: {sl_pips_b_send} pips (USD: tp=${tp_usd_b}, sl=${sl_usd_b})")
+
+    # Step 1: Close opposite trade on Account A
+    close_response = await client.post(f"{vps_url_a}/positions/close", json={"ticket": ticket_to_close}, timeout=30.0)
+    if close_response.status_code != 200:
+        raise Exception(f"Failed to close opposite position: {close_response.text}")
+
+    close_result = close_response.json()
+    if not close_result.get("success"):
+        raise Exception(f"Failed to close position: {close_result.get('message')}")
+
+    logger.info(f"Versus {versus_id}: Closed ticket {ticket_to_close}")
+
+    # Step 2: Modify remaining trade on Account A with TP and SL
+    modify_response = await client.put(f"{vps_url_a}/positions/modify", json={
+        "ticket": remaining_ticket,
+        "tp": tp_price_a,
+        "sl": sl_price_a
+    }, timeout=30.0)
+    if modify_response.status_code != 200:
+        logger.warning(f"Failed to modify position: {modify_response.text}")
+        # Continue anyway - position is open, just without SL/TP
+
+    # Step 3: Open 2 trades on Account B
+    half_lots = round(lots / 2, 2)
+    tickets_b = []
+
+    for i in range(2):
+        open_b_request = {
+            "symbol": symbol,
+            "lot": half_lots,
+            "order_type": opposite_side,
+            "tp": tp_pips_b_send,
+            "sl": sl_pips_b_send,
+            "comment": f"Versus-{versus_id}-B{i+1}"
+        }
+        open_b_response = await client.post(f"{vps_url_b}/positions/open", json=open_b_request, timeout=30.0)
+
+        if open_b_response.status_code != 200:
+            versus_manager.update_status(versus_id, VersusStatus.ERROR,
+                error_message=f"Failed to open trade {i+1} on Account B")
+            raise Exception(f"Failed to open trade on Account B: {open_b_response.text}")
+
+        open_b_result = open_b_response.json()
+        if not open_b_result.get("success"):
+            versus_manager.update_status(versus_id, VersusStatus.ERROR,
+                error_message=f"Failed to open trade {i+1} on Account B: {open_b_result.get('message')}")
+            raise Exception(f"Failed to open trade on Account B")
+
+        tickets_b.append(open_b_result.get("ticket"))
+        logger.info(f"Versus {versus_id}: Opened {opposite_side} on Account B with ticket {open_b_result.get('ticket')}")
+
+    # Update status to transferido
+    updated_config = versus_manager.update_status(
+        versus_id,
+        VersusStatus.TRANSFERIDO,
+        tickets_a=[remaining_ticket],
+        tickets_b=tickets_b
+    )
+
+    # Clear cache for both accounts
+    await invalidate_account_cache(account_a)
+    await invalidate_account_cache(account_b)
+
+    # Fire-and-forget notification
+    try:
+        label_a = await get_account_label(account_a, config, "a")
+        label_b = await get_account_label(account_b, config, "b")
+        # Show adjusted TP/SL (Account A's TP/SL now comes from B's values with spread/commission)
+        adjusted_tp_usd_a = round(new_tp_pips_a * usd_per_pip, 2)
+        adjusted_sl_usd_a = round(new_sl_pips_a * usd_per_pip, 2)
+        adjusted_tp_usd_b = round(tp_pips_b_send * usd_per_pip, 2)
+        adjusted_sl_usd_b = round(sl_pips_b_send * usd_per_pip, 2)
+        await telegram_service.notify_transferir_success(
+            versus_id, label_a, label_b,
+            symbol, side, lots,
+            tp_usd_a=adjusted_tp_usd_a, sl_usd_a=adjusted_sl_usd_a,
+            tp_usd_b=adjusted_tp_usd_b, sl_usd_b=adjusted_sl_usd_b
+        )
+    except Exception:
+        pass
+
+    return {
+        "status": "success",
+        "message": f"Transferido: Account A has 1 {side} trade, Account B has 2 {opposite_side} trades",
+        "versus": updated_config,
+        "account_a_ticket": remaining_ticket,
+        "account_b_tickets": tickets_b,
+        "prices": {
+            "account_a": {"tp": tp_price_a, "sl": sl_price_a},
+            "account_b": {"tp_pips": tp_pips_b_send, "sl_pips": sl_pips_b_send}
+        }
+    }
 
 
 @app.post("/api/versus/{versus_id}/transferir")
@@ -1314,250 +1673,25 @@ async def execute_transferir(versus_id: str):
     1. Close opposite trade on Account A (if side=BUY, close SELL ticket)
     2. Modify remaining trade on Account A with TP and SL (price-based)
     3. Open 2 trades on Account B (opposite direction, X/2 lots each)
-       - TP = Account A's SL (mirrored)
-       - SL = Account A's TP (mirrored)
     4. Store tickets, set status = "transferido"
     """
     try:
-        config = versus_manager.get(versus_id)
-        if not config:
-            raise HTTPException(status_code=404, detail=f"Versus {versus_id} not found")
-
-        if config["status"] != VersusStatus.CONGELADO.value:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Cannot transferir Versus in {config['status']} status. Must be congelado."
-            )
-
-        account_a = config["account_a"]
-        account_b = config["account_b"]
-        symbol = config["symbol"]
-        lots = config["lots"]
-        side = config["side"]  # Account A's direction
-        tp_pips_a = config["tp_pips_a"]
-        sl_pips_a = config["sl_pips_a"]
-        tp_pips_b = config["tp_pips_b"]
-        sl_pips_b = config["sl_pips_b"]
-        tickets_a = config["tickets_a"]
-
-        if len(tickets_a) != 2:
-            raise HTTPException(status_code=400, detail=f"Expected 2 tickets on Account A, found {len(tickets_a)}")
-
-        logger.info(f"Executing Transferir for Versus {versus_id}")
-
-        # Find VPS for accounts
-        vps_a = account_vps_cache.get(account_a)
-        vps_b = account_vps_cache.get(account_b)
-
-        if not vps_a or not vps_b:
-            await data_aggregator.fetch_all_agents()
-            vps_a = account_vps_cache.get(account_a)
-            vps_b = account_vps_cache.get(account_b)
-
-        if not vps_a:
-            raise HTTPException(status_code=404, detail=f"Account {account_a} not found")
-        if not vps_b:
-            raise HTTPException(status_code=404, detail=f"Account {account_b} not found")
-
-        # Get VPS configs
-        agent_config_a = None
-        agent_config_b = None
-        for agent in settings.VPS_AGENTS:
-            if agent.get("name") == vps_a:
-                agent_config_a = agent
-            if agent.get("name") == vps_b:
-                agent_config_b = agent
-
-        if not agent_config_a:
-            raise HTTPException(status_code=500, detail=f"VPS config not found for {vps_a}")
-        if not agent_config_b:
-            raise HTTPException(status_code=500, detail=f"VPS config not found for {vps_b}")
-
-        vps_url_a = agent_config_a["url"]
-        vps_url_b = agent_config_b["url"]
-
-        client = await get_http_client()
-
-        # First, get open positions on Account A to identify which ticket is which
-        positions_response = await client.get(f"{vps_url_a}/positions", timeout=30.0)
-        if positions_response.status_code != 200:
-            raise HTTPException(status_code=500, detail="Failed to get positions from Account A")
-
-        positions_data = positions_response.json()
-        positions = positions_data.get("positions", [])
-
-        # Find our tickets and their details
-        buy_ticket = None
-        sell_ticket = None
-        current_price = None
-
-        for pos in positions:
-            if pos.get("ticket") in tickets_a:
-                if pos.get("type") == "BUY":
-                    buy_ticket = pos.get("ticket")
-                    current_price = pos.get("current_price")
-                elif pos.get("type") == "SELL":
-                    sell_ticket = pos.get("ticket")
-                    if current_price is None:
-                        current_price = pos.get("current_price")
-
-        if buy_ticket is None or sell_ticket is None:
-            raise HTTPException(status_code=400, detail="Could not identify BUY and SELL tickets on Account A")
-
-        if current_price is None:
-            raise HTTPException(status_code=400, detail="Could not determine current price")
-
-        # Determine pip value based on symbol type
-        symbol_upper = symbol.upper()
-        if "JPY" in symbol_upper:
-            pip_value = 0.01
-            decimals = 3
-        elif symbol_upper.startswith(("BTC", "ETH", "XRP", "LTC", "BCH")):
-            # Crypto pairs use different pip values
-            pip_value = 1.0 if symbol_upper.startswith(("BTC", "ETH")) else 0.01
-            decimals = 2
-        elif symbol_upper.startswith(("XAU", "XAG")):
-            # Metals
-            pip_value = 0.01
-            decimals = 2
-        else:
-            pip_value = 0.0001
-            decimals = 5
-
-        # Fetch spread from broker
-        quote_response = await client.get(f"{vps_url_a}/quote/{symbol}", timeout=30.0)
-        if quote_response.status_code != 200:
-            logger.warning(f"Failed to get quote for spread, using 0: {quote_response.text}")
-            spread_pips = 0
-        else:
-            quote_data = quote_response.json()
-            spread_pips = quote_data.get("spread_pips", 0)
-        logger.info(f"Versus {versus_id}: Current spread for {symbol}: {spread_pips} pips")
-
-        # Calculate TP and SL prices based on side
-        # NEW LOGIC: Account A's TP/SL is recalculated based on Account B's values + spread
-        if side == "BUY":
-            # Account A keeps BUY, close SELL
-            ticket_to_close = sell_ticket
-            remaining_ticket = buy_ticket
-
-            # Recalculate Account A's TP/SL with spread adjustment
-            # If A is BUY: new_tp_pips = sl_pips_b + spread, new_sl_pips = tp_pips_b + spread
-            new_tp_pips_a = sl_pips_b + spread_pips
-            new_sl_pips_a = tp_pips_b + spread_pips
-            tp_price_a = current_price + (new_tp_pips_a * pip_value)
-            sl_price_a = current_price - (new_sl_pips_a * pip_value)
-
-            # Account B opens SELL (opposite) with its own TP/SL
-            opposite_side = "SELL"
-            tp_price_b = current_price - (tp_pips_b * pip_value)
-            sl_price_b = current_price + (sl_pips_b * pip_value)
-        else:  # SELL
-            # Account A keeps SELL, close BUY
-            ticket_to_close = buy_ticket
-            remaining_ticket = sell_ticket
-
-            # Recalculate Account A's TP/SL with spread adjustment
-            # If A is SELL: new_tp_pips = sl_pips_b - spread, new_sl_pips = tp_pips_b - spread
-            new_tp_pips_a = sl_pips_b - spread_pips
-            new_sl_pips_a = tp_pips_b - spread_pips
-            tp_price_a = current_price - (new_tp_pips_a * pip_value)
-            sl_price_a = current_price + (new_sl_pips_a * pip_value)
-
-            # Account B opens BUY (opposite) with its own TP/SL
-            opposite_side = "BUY"
-            tp_price_b = current_price + (tp_pips_b * pip_value)
-            sl_price_b = current_price - (sl_pips_b * pip_value)
-
-        # Round prices
-        tp_price_a = round(tp_price_a, decimals)
-        sl_price_a = round(sl_price_a, decimals)
-        tp_price_b = round(tp_price_b, decimals)
-        sl_price_b = round(sl_price_b, decimals)
-
-        logger.info(f"Versus {versus_id}: Closing ticket {ticket_to_close}, keeping {remaining_ticket}")
-        logger.info(f"Account A TP: {tp_price_a}, SL: {sl_price_a}")
-        logger.info(f"Account B (2x {lots/2} lots {opposite_side}) TP: {tp_price_b}, SL: {sl_price_b}")
-
-        # Step 1: Close opposite trade on Account A
-        close_response = await client.post(f"{vps_url_a}/positions/close", json={"ticket": ticket_to_close}, timeout=30.0)
-        if close_response.status_code != 200:
-            raise HTTPException(status_code=500, detail=f"Failed to close opposite position: {close_response.text}")
-
-        close_result = close_response.json()
-        if not close_result.get("success"):
-            raise HTTPException(status_code=500, detail=f"Failed to close position: {close_result.get('message')}")
-
-        logger.info(f"Versus {versus_id}: Closed ticket {ticket_to_close}")
-
-        # Step 2: Modify remaining trade on Account A with TP and SL
-        modify_response = await client.put(f"{vps_url_a}/positions/modify", json={
-            "ticket": remaining_ticket,
-            "tp": tp_price_a,
-            "sl": sl_price_a
-        }, timeout=30.0)
-        if modify_response.status_code != 200:
-            logger.warning(f"Failed to modify position: {modify_response.text}")
-            # Continue anyway - position is open, just without SL/TP
-
-        # Step 3: Open 2 trades on Account B
-        half_lots = round(lots / 2, 2)
-        tickets_b = []
-
-        for i in range(2):
-            open_b_request = {
-                "symbol": symbol,
-                "lot": half_lots,
-                "order_type": opposite_side,
-                "tp": tp_price_b,
-                "sl": sl_price_b,
-                "comment": f"Versus-{versus_id}-B{i+1}"
-            }
-            open_b_response = await client.post(f"{vps_url_b}/positions/open", json=open_b_request, timeout=30.0)
-
-            if open_b_response.status_code != 200:
-                versus_manager.update_status(versus_id, VersusStatus.ERROR,
-                    error_message=f"Failed to open trade {i+1} on Account B")
-                raise HTTPException(status_code=500, detail=f"Failed to open trade on Account B: {open_b_response.text}")
-
-            open_b_result = open_b_response.json()
-            if not open_b_result.get("success"):
-                versus_manager.update_status(versus_id, VersusStatus.ERROR,
-                    error_message=f"Failed to open trade {i+1} on Account B: {open_b_result.get('message')}")
-                raise HTTPException(status_code=500, detail=f"Failed to open trade on Account B")
-
-            tickets_b.append(open_b_result.get("ticket"))
-            logger.info(f"Versus {versus_id}: Opened {opposite_side} on Account B with ticket {open_b_result.get('ticket')}")
-
-        # Update status to transferido
-        updated_config = versus_manager.update_status(
-            versus_id,
-            VersusStatus.TRANSFERIDO,
-            tickets_a=[remaining_ticket],
-            tickets_b=tickets_b
-        )
-
-        # Clear cache for both accounts
-        await invalidate_account_cache(account_a)
-        await invalidate_account_cache(account_b)
-
-        return {
-            "status": "success",
-            "message": f"Transferido: Account A has 1 {side} trade, Account B has 2 {opposite_side} trades",
-            "versus": updated_config,
-            "account_a_ticket": remaining_ticket,
-            "account_b_tickets": tickets_b,
-            "prices": {
-                "account_a": {"tp": tp_price_a, "sl": sl_price_a},
-                "account_b": {"tp": tp_price_b, "sl": sl_price_b}
-            }
-        }
-
+        result = await execute_transferir_internal(versus_id)
+        return result
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error executing Transferir: {str(e)}")
+        config = versus_manager.get(versus_id)
         versus_manager.update_status(versus_id, VersusStatus.ERROR, error_message=str(e))
+        try:
+            label_a = await get_account_label(config["account_a"], config, "a") if config else "0"
+            label_b = await get_account_label(config["account_b"], config, "b") if config else "0"
+            await telegram_service.notify_transferir_failed(
+                versus_id, label_a, label_b, str(e)
+            )
+        except Exception:
+            pass
         raise HTTPException(status_code=500, detail=str(e))
 
 

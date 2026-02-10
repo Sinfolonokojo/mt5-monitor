@@ -1,0 +1,48 @@
+---
+# Stop all agents on VPS
+# Usage: ansible-playbook playbooks/stop.yml -i inventory/hosts.yml
+# Usage: ansible-playbook playbooks/stop.yml -i inventory/hosts.yml --limit vps02
+#
+# WARNING: vps26 (194.163.152.137) also hosts:
+#   - Main backend (FastAPI)
+#   - Cloudflare tunnel
+# This playbook ONLY stops vps-agent processes, not all Python processes.
+
+- name: Stop VPS Agents
+  hosts: all_vps
+  gather_facts: no
+  tasks:
+    - name: Stop scheduled task
+      win_shell: |
+        Stop-ScheduledTask -TaskName "VPSAgentLauncher" -ErrorAction SilentlyContinue
+      ignore_errors: yes
+
+    - name: Stop vps-agent Python processes only
+      win_shell: |
+        # Only stop Python processes running from vps-agent directory
+        Get-WmiObject Win32_Process -Filter "Name='python.exe'" | ForEach-Object {
+          if ($_.CommandLine -like "*vps-agent*" -or $_.CommandLine -like "*launcher.py*") {
+            Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
+          }
+        }
+      ignore_errors: yes
+
+    - name: Wait for processes to stop
+      pause:
+        seconds: 3
+
+    - name: Verify vps-agent processes stopped
+      win_shell: |
+        $count = 0
+        Get-WmiObject Win32_Process -Filter "Name='python.exe'" | ForEach-Object {
+          if ($_.CommandLine -like "*vps-agent*" -or $_.CommandLine -like "*launcher.py*") {
+            $count++
+          }
+        }
+        Write-Output $count
+      register: remaining
+      ignore_errors: yes
+
+    - name: Confirm stopped
+      debug:
+        msg: "{{ inventory_hostname }}: Stopped. {{ remaining.stdout | default('0') | trim }} vps-agent process(es) remaining."

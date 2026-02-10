@@ -16,6 +16,17 @@ logger = logging.getLogger(__name__)
 class MT5Service:
     """Service for interacting with a specific MT5 terminal (already logged in)"""
 
+    @staticmethod
+    def _get_filling_mode(symbol_info):
+        """Auto-detect the correct filling mode for a symbol."""
+        filling = symbol_info.filling_mode
+        if filling & 1:  # ORDER_FILLING_FOK supported
+            return mt5.ORDER_FILLING_FOK
+        elif filling & 2:  # ORDER_FILLING_IOC supported
+            return mt5.ORDER_FILLING_IOC
+        else:
+            return mt5.ORDER_FILLING_RETURN
+
     def __init__(self, terminal_path: str, display_name: str, account_holder: str = "Unknown",
                  prop_firm: str = "N/A", initial_balance: float = 100000.0):
         """
@@ -564,14 +575,44 @@ class MT5Service:
                 "magic": 234000,
                 "comment": request.comment or "MT5Monitor",
                 "type_time": mt5.ORDER_TIME_GTC,
-                "type_filling": mt5.ORDER_FILLING_IOC,
+                "type_filling": self._get_filling_mode(symbol_info),
             }
 
-            # Add SL/TP if provided
-            if request.sl is not None:
-                order_request["sl"] = request.sl
-            if request.tp is not None:
-                order_request["tp"] = request.tp
+            # Convert SL/TP from pips to price levels
+            if request.sl is not None or request.tp is not None:
+                # Calculate pip value based on symbol digits
+                point = symbol_info.point
+                digits = symbol_info.digits
+                # For 3/5 digit brokers, 1 pip = 10 points; for 2/4 digit, 1 pip = 1 point
+                pip_size = point * 10 if digits in (3, 5) else point
+
+                # Check minimum stop level (in points)
+                stop_level_points = symbol_info.trade_stops_level * point
+                if stop_level_points == 0:
+                    # Some brokers report 0, use spread as minimum
+                    stop_level_points = (tick.ask - tick.bid) * 2
+
+                if request.sl is not None:
+                    sl_distance = request.sl * pip_size
+                    if sl_distance < stop_level_points:
+                        return OpenPositionResponse(
+                            success=False,
+                            message=f"SL {request.sl} pips too close. Minimum: {stop_level_points / pip_size:.1f} pips",
+                            error_code=-11
+                        )
+                    if request.order_type.upper() == "BUY":
+                        order_request["sl"] = round(price - sl_distance, digits)
+                    else:
+                        order_request["sl"] = round(price + sl_distance, digits)
+                    logger.info(f"SL: {request.sl} pips -> price {order_request['sl']}")
+
+                if request.tp is not None:
+                    tp_distance = request.tp * pip_size
+                    if request.order_type.upper() == "BUY":
+                        order_request["tp"] = round(price + tp_distance, digits)
+                    else:
+                        order_request["tp"] = round(price - tp_distance, digits)
+                    logger.info(f"TP: {request.tp} pips -> price {order_request['tp']}")
 
             # Send order
             logger.info(f"Sending order: {order_request}")
@@ -649,13 +690,14 @@ class MT5Service:
                     message="Trading not allowed on this account"
                 )
 
-            # Get current price
+            # Get symbol info and current price
+            symbol_info = mt5.symbol_info(position.symbol)
             tick = mt5.symbol_info_tick(position.symbol)
-            if tick is None:
+            if tick is None or symbol_info is None:
                 return ClosePositionResponse(
                     success=False,
                     ticket=request.ticket,
-                    message="Failed to get current price"
+                    message="Failed to get symbol info or current price"
                 )
 
             # Create opposite order to close position
@@ -678,7 +720,7 @@ class MT5Service:
                 "magic": 234000,
                 "comment": "Close by MT5Monitor",
                 "type_time": mt5.ORDER_TIME_GTC,
-                "type_filling": mt5.ORDER_FILLING_IOC,
+                "type_filling": self._get_filling_mode(symbol_info),
             }
 
             # Send close order
@@ -810,6 +852,7 @@ class MT5Service:
 
             account_info = self.get_account_info()
             if not account_info:
+                logger.error(f"get_open_positions: Failed to get account info for {self.display_name} - returning empty positions")
                 return OpenPositionsResponse(
                     account_number=0,
                     positions=[],
@@ -820,12 +863,16 @@ class MT5Service:
             # Get all positions
             positions = mt5.positions_get()
             if positions is None:
+                error = mt5.last_error()
+                logger.warning(f"get_open_positions: mt5.positions_get() returned None for {self.display_name} (account {account_info.account_number}), error: {error}")
                 return OpenPositionsResponse(
                     account_number=account_info.account_number,
                     positions=[],
                     total_profit=0.0,
                     position_count=0
                 )
+
+            logger.info(f"get_open_positions: {self.display_name} (account {account_info.account_number}) has {len(positions)} positions")
 
             # Convert to OpenPosition objects
             open_positions = []
@@ -849,6 +896,7 @@ class MT5Service:
                     tp=pos.tp if pos.tp > 0 else None,
                     profit=pos.profit,
                     swap=pos.swap,
+                    commission=pos.commission,
                     open_time=datetime.fromtimestamp(pos.time)
                 )
 
@@ -914,6 +962,10 @@ class MT5Service:
             spread_points = tick.ask - tick.bid
             spread_pips = spread_points / pip_value
 
+            # Get trade_tick_value for USD conversion (USD profit per 1 point per 1 lot)
+            trade_tick_value = symbol_info.trade_tick_value if symbol_info.trade_tick_value else 1.0
+            point = symbol_info.point
+
             return {
                 "symbol": symbol,
                 "bid": tick.bid,
@@ -921,6 +973,8 @@ class MT5Service:
                 "spread_points": round(spread_points, 6),
                 "spread_pips": round(spread_pips, 2),
                 "pip_value": pip_value,
+                "trade_tick_value": trade_tick_value,
+                "point": point,
                 "timestamp": datetime.now().isoformat()
             }
 

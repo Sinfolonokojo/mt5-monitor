@@ -97,6 +97,22 @@ export const useVersus = (autoRefresh = true, refreshInterval = 30000) => {
     }
   }, [fetchVersusList]);
 
+  const deleteVersus = useCallback(async (versusId) => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const result = await apiService.cancelVersus(versusId);
+      await fetchVersusList();
+      return result;
+    } catch (err) {
+      setError(err.message || 'Error al eliminar el Versus');
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, [fetchVersusList]);
+
   // Auto-refresh: poll for updates every refreshInterval (default 30s)
   useEffect(() => {
     if (!autoRefresh || !featureEnabled) return;
@@ -137,6 +153,7 @@ export const useVersus = (autoRefresh = true, refreshInterval = 30000) => {
     createVersus,
     executeCongelar,
     executeTransferir,
-    cancelVersus
+    cancelVersus,
+    deleteVersus
   };
 };

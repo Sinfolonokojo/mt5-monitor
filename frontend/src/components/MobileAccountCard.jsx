@@ -1,8 +1,7 @@
 import {
   formatCurrency,
   calculateProfitLoss,
-  calculateMaxLoss,
-  getRowBackgroundColor
+  calculateProfitPercentage,
 } from '../utils/formatters';
 import EditablePhase from './EditablePhase';
 import EditableVS from './EditableVS';
@@ -10,19 +9,26 @@ import EditableVS from './EditableVS';
 const MobileAccountCard = ({ account, editMode, onPhaseUpdate, onVSUpdate, vsGroup, onCardClick }) => {
   const initialBalance = account.initial_balance || 100000;
   const profitLoss = calculateProfitLoss(account.balance, initialBalance);
-  const maxLoss = calculateMaxLoss(account.balance, initialBalance);
-  const rowBgColor = getRowBackgroundColor(account.balance, initialBalance);
+  const profitPercent = calculateProfitPercentage(account.balance, initialBalance);
+  const isProfit = profitLoss >= 0;
 
-  // Check for dark mode - use brighter colors for visibility
-  const isDarkMode = document.body.classList.contains('dark-mode');
-  const greenColor = isDarkMode ? '#10b981' : '#22c55e';
-  const redColor = isDarkMode ? '#f87171' : '#ef4444';
+  // Drawdown calculation
+  const currentDrawdown = initialBalance - account.balance;
+  const maxAllowedDrawdown = initialBalance * 0.10;
+  const drawdownPercent = Math.max(0, Math.min(100, (currentDrawdown / maxAllowedDrawdown) * 100));
+  const drawdownColor = drawdownPercent > 80 ? 'red' : drawdownPercent > 50 ? 'orange' : 'green';
 
-  const plColor = profitLoss >= 0 ? greenColor : redColor;
-  const maxLossColor = maxLoss >= 0 ? greenColor : redColor;
+  // Phase badge class
+  const phase = (account.phase || '').toUpperCase();
+  const phaseBadgeClass = phase === 'F1' ? 'phase-badge-f1'
+    : phase === 'F2' ? 'phase-badge-f2'
+    : phase === 'R' ? 'phase-badge-r'
+    : phase === 'Q' ? 'phase-badge-q'
+    : '';
+
+  const isConnected = account.status === 'connected';
 
   const handleCardClick = (e) => {
-    // Don't trigger if clicking on editable elements
     if (e.target.tagName === 'SELECT' || e.target.tagName === 'INPUT' || e.target.closest('.editable-element')) {
       return;
     }
@@ -30,153 +36,104 @@ const MobileAccountCard = ({ account, editMode, onPhaseUpdate, onVSUpdate, vsGro
   };
 
   return (
-    <div
-      onClick={handleCardClick}
-      style={{
-        backgroundColor: 'white',
-        borderRadius: '12px',
-        padding: '16px',
-        marginBottom: '12px',
-        boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-        border: `3px solid ${rowBgColor}`,
-        cursor: 'pointer',
-        transition: 'all 0.2s',
-        position: 'relative',
-      }}
-      onTouchStart={(e) => {
-        e.currentTarget.style.transform = 'scale(0.98)';
-      }}
-      onTouchEnd={(e) => {
-        e.currentTarget.style.transform = 'scale(1)';
-      }}
-    >
-      {/* Header Row */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
-        <div style={{ flex: 1 }}>
-          <div style={{ fontSize: '18px', fontWeight: '700', color: '#111827', marginBottom: '4px' }}>
-            {account.account_number}
-          </div>
-          <div style={{ fontSize: '14px', color: '#6b7280' }}>
-            {account.account_holder || 'Unknown'}
-          </div>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          {/* Connection Status */}
-          <div
-            style={{
-              width: '12px',
-              height: '12px',
-              borderRadius: '50%',
-              backgroundColor: isDarkMode
-                ? (account.status === 'connected' ? '#ffffff' : '#000000')
-                : (account.status === 'connected' ? '#22c55e' : '#ef4444'),
-              border: isDarkMode && account.status === 'connected' ? '1px solid #6b7280' : 'none',
-              boxShadow: isDarkMode
-                ? `0 0 10px ${account.status === 'connected' ? '#ffffff' : '#000000'}`
-                : (account.status === 'connected' ? '0 2px 4px rgba(34, 197, 94, 0.4)' : '0 2px 4px rgba(239, 68, 68, 0.4)')
-            }}
-            title={account.status === 'connected' ? 'Conectado' : 'Desconectado'}
-          />
-          {/* Open Position Indicator */}
-          {account.has_open_position && (
-            <div
-              style={{
-                padding: '4px 8px',
-                backgroundColor: '#dcfce7',
-                color: '#166534',
-                borderRadius: '6px',
-                fontSize: '12px',
-                fontWeight: '600',
-              }}
-            >
-              📊 Abierto
+    <div className="mobile-account-card" onClick={handleCardClick}>
+      {/* Header: Account # + Phase Badge + Connection Status */}
+      <div className="mobile-card-header">
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <span className="mobile-card-account-num">{account.account_number}</span>
+          {editMode ? (
+            <div className="editable-element" onClick={(e) => e.stopPropagation()}>
+              <EditablePhase account={account} editMode={editMode} onUpdate={onPhaseUpdate} />
             </div>
+          ) : (
+            phase && <span className={`phase-badge ${phaseBadgeClass}`}>{phase}</span>
           )}
         </div>
-      </div>
-
-      {/* Prop Firm & Days */}
-      <div style={{ display: 'flex', gap: '12px', marginBottom: '12px' }}>
-        <div
-          style={{
-            padding: '6px 12px',
-            backgroundColor: '#f3f4f6',
-            borderRadius: '6px',
-            fontSize: '13px',
-            fontWeight: '600',
-            color: '#374151',
-          }}
-        >
-          {account.prop_firm || 'N/A'}
-        </div>
-        <div
-          style={{
-            padding: '6px 12px',
-            backgroundColor: '#f3f4f6',
-            borderRadius: '6px',
-            fontSize: '13px',
-            color: '#6b7280',
-          }}
-        >
-          {account.days_operating} días
-        </div>
-      </div>
-
-      {/* P/L Section */}
-      <div style={{ marginBottom: '12px' }}>
-        <div style={{ fontSize: '12px', color: '#9ca3af', marginBottom: '4px' }}>
-          Ganancia/Pérdida
-        </div>
-        <div style={{ fontSize: '24px', fontWeight: '700', color: plColor }}>
-          {profitLoss >= 0 ? '+' : ''}{formatCurrency(profitLoss)}
-        </div>
-      </div>
-
-      {/* Max Loss */}
-      <div style={{ marginBottom: '12px' }}>
-        <div style={{ fontSize: '12px', color: '#9ca3af', marginBottom: '4px' }}>
-          Pérdida Máxima
-        </div>
-        <div style={{ fontSize: '16px', fontWeight: '600', color: maxLossColor }}>
-          {formatCurrency(maxLoss)}
-        </div>
-      </div>
-
-      {/* Phase & VS Group */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', paddingTop: '12px', borderTop: '1px solid #e5e7eb' }}>
-        <div>
-          <div style={{ fontSize: '12px', color: '#9ca3af', marginBottom: '6px' }}>
-            Fase
+        <div className="mobile-card-header-right">
+          <div className="mobile-connection-status">
+            <span className={`glowing-dot ${isConnected ? 'online' : 'offline'}`} />
+            <span>{isConnected ? 'Live' : 'Disc'}</span>
           </div>
-          <EditablePhase
-            account={account}
-            editMode={editMode}
-            onUpdate={onPhaseUpdate}
-          />
-        </div>
-        <div>
-          <div style={{ fontSize: '12px', color: '#9ca3af', marginBottom: '6px' }}>
-            VS Grupo
-          </div>
-          <EditableVS
-            account={account}
-            editMode={editMode}
-            onUpdate={onVSUpdate}
-            vsGroup={vsGroup}
-          />
         </div>
       </div>
 
-      {/* Tap indicator */}
+      {/* Holder name */}
       <div style={{
-        position: 'absolute',
-        bottom: '8px',
-        right: '12px',
-        fontSize: '11px',
-        color: '#9ca3af',
-        fontWeight: '500',
+        fontSize: '14px',
+        fontWeight: '600',
+        color: 'var(--text-primary)',
+        marginBottom: '4px',
       }}>
-        Toca para detalles →
+        {account.account_holder || 'Unknown'}
+      </div>
+
+      {/* Prop Firm */}
+      <div style={{
+        fontSize: '12px',
+        color: 'var(--text-muted)',
+        marginBottom: '14px',
+      }}>
+        {account.prop_firm || 'N/A'} · {account.days_operating || 0} días
+      </div>
+
+      {/* Balance */}
+      <div style={{
+        fontSize: '13px',
+        color: 'var(--text-secondary)',
+        marginBottom: '8px',
+        fontFamily: 'var(--font-mono)',
+      }}>
+        Balance: <span style={{ color: 'var(--text-primary)', fontWeight: '500' }}>{formatCurrency(account.balance)}</span>
+      </div>
+
+      {/* P/L Amount + Percentage Badge */}
+      <div className="mobile-card-pl">
+        <div className="mobile-card-pl-amount" style={{ color: isProfit ? 'var(--green)' : 'var(--red)' }}>
+          {isProfit ? '+' : ''}{formatCurrency(profitLoss)}
+          <span className={`mobile-card-pl-badge ${isProfit ? 'positive' : 'negative'}`}>
+            {isProfit ? '+' : ''}{profitPercent.toFixed(2)}%
+          </span>
+        </div>
+      </div>
+
+      {/* Drawdown Progress Bar */}
+      <div className="drawdown-section">
+        <div className="drawdown-label">
+          <span className="drawdown-label-text">Drawdown</span>
+          <span className="drawdown-label-value" style={{
+            color: drawdownPercent > 80 ? 'var(--red)' : drawdownPercent > 50 ? 'var(--orange)' : 'var(--text-secondary)'
+          }}>
+            {drawdownPercent.toFixed(1)}%
+          </span>
+        </div>
+        <div className="drawdown-bar">
+          <div
+            className={`drawdown-bar-fill ${drawdownColor}`}
+            style={{ width: `${drawdownPercent}%` }}
+          />
+        </div>
+      </div>
+
+      {/* Footer: Positions + VS Group + Chevron */}
+      <div className="mobile-card-footer">
+        <div className="mobile-card-footer-left">
+          <span className="mobile-card-footer-item">
+            {account.has_open_position ? '📊' : '—'}
+            {account.has_open_position ? ' Pos. abierta' : ' Sin posición'}
+          </span>
+          {editMode ? (
+            <div className="editable-element" onClick={(e) => e.stopPropagation()}>
+              <EditableVS account={account} editMode={editMode} onUpdate={onVSUpdate} vsGroup={vsGroup} />
+            </div>
+          ) : (
+            vsGroup && (
+              <span className="mobile-card-footer-item" style={{ color: 'var(--primary)' }}>
+                VS {vsGroup}
+              </span>
+            )
+          )}
+        </div>
+        <span className="mobile-card-chevron">›</span>
       </div>
     </div>
   );

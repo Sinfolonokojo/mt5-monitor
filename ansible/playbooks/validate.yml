@@ -1,0 +1,55 @@
+---
+# Validate VPS is ready for deployment
+# Usage: ansible-playbook playbooks/validate.yml -i inventory/hosts.yml
+
+- name: Validate VPS Environment
+  hosts: all_vps
+  gather_facts: no
+  tasks:
+    - name: Test WinRM connection
+      win_ping:
+      register: ping_result
+
+    - name: Check Python installed
+      win_command: python --version
+      register: python_check
+      ignore_errors: yes
+
+    - name: Check pip installed
+      win_command: python -m pip --version
+      register: pip_check
+      ignore_errors: yes
+
+    - name: Check vps-agent directory exists
+      win_stat:
+        path: "{{ vps_agent_path }}"
+      register: agent_dir
+
+    - name: Check agents.json exists
+      win_stat:
+        path: "{{ vps_agent_path }}\\agents.json"
+      register: agents_json
+
+    - name: Check ports are available or in use
+      win_shell: |
+        $port = {{ item }}
+        $connection = Get-NetTCPConnection -LocalPort $port -ErrorAction SilentlyContinue
+        if ($connection) { Write-Output "IN_USE" } else { Write-Output "FREE" }
+      loop: "{{ agent_ports }}"
+      register: port_checks
+
+    - name: Generate validation report
+      debug:
+        msg: |
+          ═══════════════════════════════════════════════════
+           {{ inventory_hostname | upper }} VALIDATION REPORT
+          ═══════════════════════════════════════════════════
+           Connection:    {{ 'OK' if ping_result.ping == 'pong' else 'FAILED' }}
+           Python:        {{ python_check.stdout | default('NOT INSTALLED') | trim }}
+           Pip:           {{ 'OK' if pip_check.rc == 0 else 'NOT INSTALLED' }}
+           Agent Dir:     {{ 'EXISTS' if agent_dir.stat.exists else 'MISSING' }}
+           agents.json:   {{ 'EXISTS' if agents_json.stat.exists else 'MISSING' }}
+           Port 8000:     {{ port_checks.results[0].stdout | trim }}
+           Port 8001:     {{ port_checks.results[1].stdout | trim }}
+           Port 8002:     {{ port_checks.results[2].stdout | trim }}
+          ═══════════════════════════════════════════════════

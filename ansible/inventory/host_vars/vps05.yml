@@ -1,0 +1,28 @@
+# VPS05 - Carlos Emir Silva
+vps_name: VPS05
+account_holder: "Carlos Emir Silva"
+
+agents:
+  - name: "VPS05-FundedNext"
+    port: 8000
+    terminal_path: "{{ mt5_terminals.fundednext }}"
+    display_name: "FN - Carlos Emir Silva"
+    account_holder: "{{ account_holder }}"
+    prop_firm: "FN"
+    initial_balance: 100000.0
+
+  - name: "VPS05-FivePercent"
+    port: 8001
+    terminal_path: "{{ mt5_terminals.fivepercent }}"
+    display_name: "T5 - Carlos Emir Silva"
+    account_holder: "{{ account_holder }}"
+    prop_firm: "T5"
+    initial_balance: 100000.0
+
+  - name: "VPS05-FTMO"
+    port: 8002
+    terminal_path: "{{ mt5_terminals.ftmo }}"
+    display_name: "FTMO - Carlos Emir Silva"
+    account_holder: "{{ account_holder }}"
+    prop_firm: "FTMO"
+    initial_balance: 100000.0

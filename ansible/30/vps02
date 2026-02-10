@@ -1,0 +1,1 @@
+{"changed": false, "msg": "Task failed: The WS-Management service cannot process the request because the request contained invalid selectors for the resource.  (extended fault data: {'transport_message': 'Bad HTTP response returned from server. Code 500', 'http_status_code': 500, 'wsmanfault_code': 2150858843, 'fault_code': 's:Sender', 'fault_subcode': 'w:InvalidSelectors'})"}

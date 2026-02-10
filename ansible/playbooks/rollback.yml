@@ -1,0 +1,43 @@
+---
+# Rollback to previous version
+# Usage: ansible-playbook playbooks/rollback.yml -i inventory/hosts.yml --limit vps2
+
+- name: Rollback VPS Agent
+  hosts: all_vps
+  gather_facts: no
+  tasks:
+    - name: Find latest backup
+      win_shell: |
+        Get-ChildItem "{{ backup_path }}" -Directory | Sort-Object Name -Descending | Select-Object -First 1 -ExpandProperty FullName
+      register: latest_backup
+
+    - name: Show backup to restore
+      debug:
+        msg: "Rolling back to: {{ latest_backup.stdout | trim }}"
+
+    - name: Stop current agents
+      win_shell: |
+        Get-Process python -ErrorAction SilentlyContinue | Stop-Process -Force
+      ignore_errors: yes
+
+    - name: Wait for stop
+      pause:
+        seconds: 3
+
+    - name: Restore from backup
+      win_copy:
+        src: "{{ latest_backup.stdout | trim }}\\"
+        dest: "{{ vps_agent_path }}\\"
+        remote_src: yes
+
+    - name: Start restored agents
+      win_shell: |
+        Start-Process python -ArgumentList "launcher.py" -WorkingDirectory "{{ vps_agent_path }}" -WindowStyle Hidden
+
+    - name: Wait for startup
+      pause:
+        seconds: 10
+
+    - name: Rollback complete
+      debug:
+        msg: "Rolled back {{ inventory_hostname }} to {{ latest_backup.stdout | trim }}"

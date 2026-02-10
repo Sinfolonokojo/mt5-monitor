@@ -1,0 +1,46 @@
+---
+# Generate VPS_AGENTS_JSON for main-backend .env file
+# Usage: ansible-playbook playbooks/generate-backend-env.yml -i inventory/hosts.yml
+#
+# This playbook generates the VPS_AGENTS_JSON configuration that should be
+# added to main-backend/.env file
+
+- name: Generate VPS_AGENTS_JSON
+  hosts: localhost
+  gather_facts: no
+  vars:
+    output_file: "../main-backend/.env.agents"
+
+  tasks:
+    - name: Build agents list from inventory
+      set_fact:
+        all_agents: "{{ all_agents | default([]) + [
+          {'name': item + '-FundedNext', 'url': 'http://' + hostvars[item]['ansible_host'] + ':8000'},
+          {'name': item + '-FivePercent', 'url': 'http://' + hostvars[item]['ansible_host'] + ':8001'},
+          {'name': item + '-FTMO', 'url': 'http://' + hostvars[item]['ansible_host'] + ':8002'}
+        ] }}"
+      loop: "{{ groups['all_vps'] }}"
+
+    - name: Generate VPS_AGENTS_JSON
+      copy:
+        content: |
+          # Generated VPS_AGENTS_JSON for main-backend/.env
+          # Copy the line below to your main-backend/.env file
+
+          VPS_AGENTS_JSON={{ all_agents | to_json }}
+        dest: "{{ output_file }}"
+
+    - name: Display result
+      debug:
+        msg: |
+          ═══════════════════════════════════════════════════
+           VPS_AGENTS_JSON GENERATED
+          ═══════════════════════════════════════════════════
+
+           Output saved to: {{ output_file }}
+
+           Total agents: {{ all_agents | length }}
+
+           Copy the VPS_AGENTS_JSON line from the file to
+           main-backend/.env to update the backend config.
+          ═══════════════════════════════════════════════════

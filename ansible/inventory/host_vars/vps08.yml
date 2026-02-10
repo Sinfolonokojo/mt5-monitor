@@ -1,0 +1,28 @@
+# VPS08 - Emir Silva
+vps_name: VPS08
+account_holder: "Emir Silva"
+
+agents:
+  - name: "VPS08-FundedNext"
+    port: 8000
+    terminal_path: "{{ mt5_terminals.fundednext }}"
+    display_name: "FN - Emir Silva"
+    account_holder: "{{ account_holder }}"
+    prop_firm: "FN"
+    initial_balance: 100000.0
+
+  - name: "VPS08-FivePercent"
+    port: 8001
+    terminal_path: "{{ mt5_terminals.fivepercent }}"
+    display_name: "T5 - Emir Silva"
+    account_holder: "{{ account_holder }}"
+    prop_firm: "T5"
+    initial_balance: 100000.0
+
+  - name: "VPS08-FTMO"
+    port: 8002
+    terminal_path: "{{ mt5_terminals.ftmo }}"
+    display_name: "FTMO - Emir Silva"
+    account_holder: "{{ account_holder }}"
+    prop_firm: "FTMO"
+    initial_balance: 100000.0

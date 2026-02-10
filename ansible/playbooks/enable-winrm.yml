@@ -1,0 +1,76 @@
+---
+# Enable WinRM on Windows VPS via SSH connection
+# Usage: ansible-playbook playbooks/enable-winrm.yml -i inventory/hosts_ssh.yml
+# Usage: ansible-playbook playbooks/enable-winrm.yml -i inventory/hosts_ssh.yml --limit stage3
+#
+# This playbook connects via SSH and enables WinRM for future management
+
+- name: Enable WinRM on Windows VPS via SSH
+  hosts: remaining_vps
+  gather_facts: no
+  serial: 5  # Process 5 hosts at a time
+
+  tasks:
+    - name: Test SSH connection
+      raw: whoami
+      register: ssh_test
+      ignore_errors: yes
+
+    - name: Display connection status
+      debug:
+        msg: "SSH connection to {{ inventory_hostname }} ({{ ansible_host }}): {{ 'OK' if ssh_test.rc == 0 else 'FAILED' }}"
+
+    - name: Skip if SSH connection failed
+      meta: end_host
+      when: ssh_test.rc != 0
+
+    - name: Enable WinRM service
+      raw: |
+        powershell -Command "winrm quickconfig -force"
+      register: winrm_quickconfig
+      ignore_errors: yes
+
+    - name: Configure WinRM to allow unencrypted traffic
+      raw: |
+        powershell -Command "winrm set winrm/config/service '@{AllowUnencrypted=\"true\"}'"
+      register: winrm_unencrypted
+      ignore_errors: yes
+
+    - name: Configure WinRM to allow basic authentication
+      raw: |
+        powershell -Command "winrm set winrm/config/service/auth '@{Basic=\"true\"}'"
+      register: winrm_basic
+      ignore_errors: yes
+
+    - name: Set WinRM MaxMemoryPerShellMB
+      raw: |
+        powershell -Command "winrm set winrm/config/winrs '@{MaxMemoryPerShellMB=\"1024\"}'"
+      ignore_errors: yes
+
+    - name: Open firewall port 5985 for WinRM HTTP
+      raw: |
+        powershell -Command "netsh advfirewall firewall add rule name='WinRM HTTP' dir=in action=allow protocol=TCP localport=5985"
+      ignore_errors: yes
+
+    - name: Ensure WinRM service is running and set to auto-start
+      raw: |
+        powershell -Command "Set-Service -Name WinRM -StartupType Automatic; Start-Service -Name WinRM"
+      ignore_errors: yes
+
+    - name: Verify WinRM is listening
+      raw: |
+        powershell -Command "winrm enumerate winrm/config/listener"
+      register: winrm_listener
+      ignore_errors: yes
+
+    - name: Display WinRM configuration result
+      debug:
+        msg: |
+          ═══════════════════════════════════════════════════
+           {{ inventory_hostname | upper }} WinRM CONFIGURATION
+          ═══════════════════════════════════════════════════
+           QuickConfig:   {{ 'OK' if winrm_quickconfig.rc == 0 else 'FAILED' }}
+           Unencrypted:   {{ 'OK' if winrm_unencrypted.rc == 0 else 'FAILED' }}
+           Basic Auth:    {{ 'OK' if winrm_basic.rc == 0 else 'FAILED' }}
+           Listener:      {{ 'CONFIGURED' if 'HTTP' in winrm_listener.stdout else 'NOT FOUND' }}
+          ═══════════════════════════════════════════════════

@@ -37,16 +37,30 @@ class VersusManager:
                         self.versus_configs = json.load(f)
                     logger.info(f"Loaded {len(self.versus_configs)} Versus configs from {self.file_path}")
 
-                    # Migration: convert old tp_pips/sl_pips to new tp_pips_a/sl_pips_a format
+                    # Migration: convert old pips formats to USD format
                     migrated = False
                     for config in self.versus_configs.values():
-                        if "tp_pips" in config and "tp_pips_a" not in config:
-                            config["tp_pips_a"] = config.pop("tp_pips")
-                            config["sl_pips_a"] = config.pop("sl_pips")
-                            config["tp_pips_b"] = config["tp_pips_a"]  # Default B to same as A
-                            config["sl_pips_b"] = config["sl_pips_a"]
+                        # Old format: tp_pips/sl_pips (single values)
+                        if "tp_pips" in config and "tp_usd_a" not in config:
+                            # Approximate conversion: assume $10/pip/lot for forex
+                            lots = config.get("lots", 0.01)
+                            usd_per_pip = 10 * lots
+                            config["tp_usd_a"] = round(config.pop("tp_pips") * usd_per_pip, 2)
+                            config["sl_usd_a"] = round(config.pop("sl_pips") * usd_per_pip, 2)
+                            config["tp_usd_b"] = config["tp_usd_a"]
+                            config["sl_usd_b"] = config["sl_usd_a"]
                             migrated = True
-                            logger.info(f"Migrated Versus {config['id']} to new TP/SL schema")
+                            logger.info(f"Migrated Versus {config['id']} from old pips to USD schema")
+                        # Previous format: tp_pips_a/sl_pips_a (per-account pips)
+                        elif "tp_pips_a" in config and "tp_usd_a" not in config:
+                            lots = config.get("lots", 0.01)
+                            usd_per_pip = 10 * lots
+                            config["tp_usd_a"] = round(config.pop("tp_pips_a") * usd_per_pip, 2)
+                            config["sl_usd_a"] = round(config.pop("sl_pips_a") * usd_per_pip, 2)
+                            config["tp_usd_b"] = round(config.pop("tp_pips_b") * usd_per_pip, 2)
+                            config["sl_usd_b"] = round(config.pop("sl_pips_b") * usd_per_pip, 2)
+                            migrated = True
+                            logger.info(f"Migrated Versus {config['id']} from pips_a/b to USD schema")
 
                     if migrated:
                         self.save_configs()
@@ -70,9 +84,12 @@ class VersusManager:
                 logger.error(f"Error saving Versus configs: {str(e)}")
 
     def create(self, account_a: int, account_b: int, symbol: str, lots: float,
-               side: str, tp_pips_a: float, sl_pips_a: float,
-               tp_pips_b: float, sl_pips_b: float,
-               scheduled_congelar: Optional[datetime] = None) -> dict:
+               side: str, tp_usd_a: float, sl_usd_a: float,
+               tp_usd_b: float, sl_usd_b: float,
+               scheduled_congelar: Optional[datetime] = None,
+               scheduled_transferir: Optional[datetime] = None,
+               holder_a: str = "", prop_firm_a: str = "",
+               holder_b: str = "", prop_firm_b: str = "") -> dict:
         """
         Create a new Versus configuration.
         Returns the created config dict.
@@ -88,14 +105,19 @@ class VersusManager:
                 "symbol": symbol.upper(),
                 "lots": lots,
                 "side": side.upper(),
-                "tp_pips_a": tp_pips_a,
-                "sl_pips_a": sl_pips_a,
-                "tp_pips_b": tp_pips_b,
-                "sl_pips_b": sl_pips_b,
+                "tp_usd_a": tp_usd_a,
+                "sl_usd_a": sl_usd_a,
+                "tp_usd_b": tp_usd_b,
+                "sl_usd_b": sl_usd_b,
                 "status": VersusStatus.PENDING.value,
                 "created_at": now,
                 "updated_at": now,
                 "scheduled_congelar": scheduled_congelar.isoformat() if scheduled_congelar else None,
+                "scheduled_transferir": scheduled_transferir.isoformat() if scheduled_transferir else None,
+                "holder_a": holder_a,
+                "prop_firm_a": prop_firm_a,
+                "holder_b": holder_b,
+                "prop_firm_b": prop_firm_b,
                 "tickets_a": [],
                 "tickets_b": [],
                 "error_message": None
@@ -182,6 +204,32 @@ class VersusManager:
                             pending.append(config)
                     except Exception as e:
                         logger.error(f"Error parsing scheduled time for Versus {config['id']}: {scheduled_str} - {e}")
+            return pending
+
+    def get_pending_scheduled_transferir(self) -> List[dict]:
+        """Get all congelado Versus configs with scheduled_transferir time that has passed"""
+        with self.lock:
+            now = datetime.utcnow()
+            pending = []
+            for config in self.versus_configs.values():
+                if (config["status"] == VersusStatus.CONGELADO.value and
+                    config.get("scheduled_transferir")):
+                    scheduled_str = config["scheduled_transferir"]
+                    try:
+                        if scheduled_str.endswith('Z'):
+                            scheduled_str = scheduled_str[:-1]
+                        if '+' in scheduled_str:
+                            scheduled_str = scheduled_str.split('+')[0]
+                        if '.' in scheduled_str:
+                            scheduled_str = scheduled_str.split('.')[0]
+                        scheduled_time = datetime.fromisoformat(scheduled_str)
+                        if scheduled_time.tzinfo is not None:
+                            scheduled_time = scheduled_time.replace(tzinfo=None)
+                        logger.info(f"Versus {config['id']}: scheduled_transferir={scheduled_time} UTC, now={now} UTC, due={scheduled_time <= now}")
+                        if scheduled_time <= now:
+                            pending.append(config)
+                    except Exception as e:
+                        logger.error(f"Error parsing scheduled transferir time for Versus {config['id']}: {scheduled_str} - {e}")
             return pending
 
 

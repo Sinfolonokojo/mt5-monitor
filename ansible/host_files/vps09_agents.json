@@ -1,0 +1,31 @@
+{
+  "agents": [
+    {
+      "name": "VPS09-FundedNext",
+      "port": 8000,
+      "terminal_path": "C:\\Program Files\\FundedNext MT5 Terminal\\terminal64.exe",
+      "display_name": "FN - Harrison Arias",
+      "account_holder": "Harrison Arias",
+      "prop_firm": "FN",
+      "initial_balance": 100000.0
+    },
+    {
+      "name": "VPS09-FivePercent",
+      "port": 8001,
+      "terminal_path": "C:\\Program Files\\Five Percent Online MetaTrader 5\\terminal64.exe",
+      "display_name": "T5 - Harrison Arias",
+      "account_holder": "Harrison Arias",
+      "prop_firm": "T5",
+      "initial_balance": 100000.0
+    },
+    {
+      "name": "VPS09-FTMO",
+      "port": 8002,
+      "terminal_path": "C:\\Program Files\\FTMO MetaTrader 5\\terminal64.exe",
+      "display_name": "FTMO - Harrison Arias",
+      "account_holder": "Harrison Arias",
+      "prop_firm": "FTMO",
+      "initial_balance": 100000.0
+    }
+  ]
+}

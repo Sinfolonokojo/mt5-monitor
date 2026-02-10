@@ -132,6 +132,7 @@ class OpenPosition(BaseModel):
     tp: Optional[float] = None
     profit: float
     swap: float
+    commission: float = 0.0
     open_time: datetime
 
 

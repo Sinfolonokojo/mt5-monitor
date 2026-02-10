@@ -1,469 +1,72 @@
-/* Dark Mode Styles for Components */
+/* Dark Mode Overrides - Minimal since base theme is already dark */
 
-/* Tables and Cards */
-body.dark-mode table {
-  background-color: var(--bg-secondary) !important;
-  color: var(--text-primary);
+/* Force dark backgrounds on any lingering light elements */
+body table {
+  background-color: var(--bg-surface);
 }
 
-body.dark-mode thead {
-  background-color: #0f172a !important;
-  border-bottom-color: var(--border-color) !important;
+body thead {
+  background-color: var(--bg-header);
 }
 
-body.dark-mode th {
-  color: var(--text-primary) !important;
-  border-color: var(--border-color) !important;
-}
-
-body.dark-mode th[style*="backgroundColor"] {
-  background-color: #374151 !important;
-}
-
-body.dark-mode tbody tr {
-  background-color: var(--bg-secondary) !important;
-  border-bottom-color: var(--border-color) !important;
-}
-
-body.dark-mode tbody tr:hover {
-  background-color: #374151 !important;
-}
-
-body.dark-mode td {
-  color: var(--text-primary) !important;
-  border-color: var(--border-color) !important;
-  background-color: transparent !important;
-}
-
-/* Buttons */
-body.dark-mode button:not(.dark-mode-toggle) {
+body th,
+body td {
   border-color: var(--border-color);
 }
 
-/* Inputs and search bars */
-body.dark-mode input[type="text"],
-body.dark-mode input[type="search"] {
-  background-color: var(--bg-secondary) !important;
-  color: var(--text-primary) !important;
-  border-color: var(--border-color) !important;
+/* Modal overlays */
+.modal-overlay {
+  background-color: rgba(0, 0, 0, 0.8);
+  backdrop-filter: blur(4px);
 }
 
-body.dark-mode input[type="text"]::placeholder,
-body.dark-mode input[type="search"]::placeholder {
-  color: var(--text-secondary);
-}
-
-body.dark-mode input[type="text"]:focus,
-body.dark-mode input[type="search"]:focus {
-  border-color: #3b82f6 !important;
-}
-
-/* Select dropdowns */
-body.dark-mode select {
-  background-color: var(--bg-secondary) !important;
-  color: var(--text-primary) !important;
-  border-color: var(--border-color) !important;
-}
-
-/* Modals */
-body.dark-mode [style*="backgroundColor: white"],
-body.dark-mode [style*="backgroundColor:#fff"],
-body.dark-mode [style*="backgroundColor: #fff"],
-body.dark-mode [style*="backgroundColor:#ffffff"],
-body.dark-mode [style*="backgroundColor: #ffffff"] {
-  background-color: var(--bg-secondary) !important;
-}
-
-body.dark-mode [style*="backgroundColor: rgba(0, 0, 0"] {
-  background-color: rgba(0, 0, 0, 0.9) !important;
-}
-
-/* Modal specific elements */
-body.dark-mode [style*="position: fixed"] {
-  background-color: rgba(0, 0, 0, 0.9) !important;
-}
-
-/* Modal content boxes */
-body.dark-mode [style*="maxWidth"][style*="margin"][style*="padding"] {
-  background-color: var(--bg-secondary) !important;
-  color: var(--text-primary) !important;
-}
-
-/* Modal headers and titles */
-body.dark-mode h2,
-body.dark-mode h3,
-body.dark-mode h4 {
-  color: var(--text-primary) !important;
-}
-
-/* Modal text elements */
-body.dark-mode p,
-body.dark-mode span,
-body.dark-mode div {
+/* Ensure proper contrast on all text */
+body p,
+body span,
+body div,
+body label {
   color: inherit;
 }
 
-/* Modal close buttons */
-body.dark-mode button[style*="position: absolute"] {
-  color: var(--text-primary) !important;
-  background-color: transparent !important;
-}
-
-body.dark-mode button[style*="position: absolute"]:hover {
-  background-color: rgba(255, 255, 255, 0.1) !important;
-}
-
-/* Cards */
-body.dark-mode [style*="border: 1px solid #e5e7eb"],
-body.dark-mode [style*="border:1px solid #e5e7eb"],
-body.dark-mode [style*="border: 2px solid #d1d5db"],
-body.dark-mode [style*="border:2px solid #d1d5db"] {
-  border-color: var(--border-color) !important;
-}
-
-body.dark-mode [style*="boxShadow"],
-body.dark-mode [style*="box-shadow"] {
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4) !important;
-}
-
-/* Ensure all divs with white backgrounds are dark */
-body.dark-mode div[style*="background"] {
-  background-color: var(--bg-secondary) !important;
-}
-
-body.dark-mode div[style*="backgroundColor: white"],
-body.dark-mode div[style*="backgroundColor:#ffffff"],
-body.dark-mode div[style*="backgroundColor: #ffffff"] {
-  background-color: var(--bg-secondary) !important;
-}
-
-/* Text colors - Force light colors on dark backgrounds */
-body.dark-mode [style*="color: #111827"],
-body.dark-mode [style*="color:#111827"],
-body.dark-mode [style*="color: '#111827'"],
-body.dark-mode [style*='color: "#111827"'] {
-  color: #f9fafb !important;
-}
-
-body.dark-mode [style*="color: #6b7280"],
-body.dark-mode [style*="color:#6b7280"],
-body.dark-mode [style*="color: '#6b7280'"],
-body.dark-mode [style*='color: "#6b7280"'] {
-  color: #d1d5db !important;
-}
-
-body.dark-mode [style*="color: #374151"],
-body.dark-mode [style*="color:#374151"],
-body.dark-mode [style*="color: '#374151'"],
-body.dark-mode [style*='color: "#374151"'] {
-  color: #e5e7eb !important;
-}
-
-/* Ensure all table headers are visible - MAXIMUM SPECIFICITY */
-body.dark-mode th,
-body.dark-mode thead th,
-body.dark-mode table thead th,
-body.dark-mode table thead tr th {
-  color: #f9fafb !important;
-}
-
-/* Override specific color inline styles in table headers */
-body.dark-mode th[style*="color"],
-body.dark-mode thead th[style*="color"],
-body.dark-mode table thead th[style*="color"] {
-  color: #f9fafb !important;
-}
-
-/* Ensure all text elements are readable */
-body.dark-mode span,
-body.dark-mode div,
-body.dark-mode p,
-body.dark-mode td {
-  color: inherit;
-}
-
-/* Status colors - preserve and enhance in dark mode */
-body.dark-mode [style*="color: #22c55e"],
-body.dark-mode [style*="color:#22c55e"],
-body.dark-mode [style*="color: green"] {
-  color: #4ade80 !important; /* Brighter green for dark mode */
-}
-
-body.dark-mode [style*="color: #ef4444"],
-body.dark-mode [style*="color:#ef4444"],
-body.dark-mode [style*="color: red"] {
-  color: #f87171 !important; /* Brighter red for dark mode */
-}
-
-body.dark-mode [style*="color: #f59e0b"],
-body.dark-mode [style*="color:#f59e0b"],
-body.dark-mode [style*="color: orange"] {
-  color: #fbbf24 !important; /* Brighter orange for dark mode */
-}
-
-/* Status indicator dots - preserve bright colors */
-body.dark-mode div[style*="borderRadius: 50%"][style*="width: 10px"] {
-  /* Don't override background color for status dots - they need to stay bright */
-  box-shadow: 0 0 4px currentColor;
-}
-
-/* Status indicator dots - Keep original colors, just add glow */
-body.dark-mode div[style*="width: 10px"][style*="height: 10px"][style*="borderRadius: 50%"],
-body.dark-mode div[style*="width:10px"][style*="height:10px"][style*="borderRadius:50%"],
-body.dark-mode div[style*="width: 12px"][style*="height: 12px"][style*="borderRadius: 50%"],
-body.dark-mode div[style*="width:12px"][style*="height:12px"][style*="borderRadius:50%"],
-body.dark-mode div[style*="width: 16px"][style*="height: 16px"][style*="borderRadius: 50%"],
-body.dark-mode div[style*="width:16px"][style*="height:16px"][style*="borderRadius:50%"] {
-  /* Don't change colors, they're handled in components */
-}
-
-/* Background colors for status indicators and info boxes */
-body.dark-mode [style*="backgroundColor: #dcfce7"],
-body.dark-mode [style*="backgroundColor:#dcfce7"] {
-  background-color: #14532d !important;
-}
-
-body.dark-mode [style*="backgroundColor: #fee2e2"],
-body.dark-mode [style*="backgroundColor:#fee2e2"] {
-  background-color: #7f1d1d !important;
-}
-
-body.dark-mode [style*="backgroundColor: #fef3c7"],
-body.dark-mode [style*="backgroundColor:#fef3c7"] {
-  background-color: #78350f !important;
-}
-
-/* Statistics boxes in modals */
-body.dark-mode [style*="backgroundColor: #f9fafb"][style*="padding: 16px"],
-body.dark-mode [style*="backgroundColor:#f9fafb"][style*="padding: 16px"] {
-  background-color: #1f2937 !important;
-}
-
-/* Ensure all div text is readable */
-body.dark-mode div[style*="fontSize"] {
-  color: inherit;
-}
-
-/* Force bright text on all modal content */
-body.dark-mode div[style*="padding"][style*="backgroundColor"] div {
-  color: #f9fafb !important;
-}
-
-/* Override any remaining dark colors that make text unreadable */
-body.dark-mode [style*="color: #1f2937"],
-body.dark-mode [style*="color:#1f2937"],
-body.dark-mode [style*="color: #0f172a"],
-body.dark-mode [style*="color:#0f172a"],
-body.dark-mode [style*="color: '#1f2937'"],
-body.dark-mode [style*="color: '#0f172a'"],
-body.dark-mode [style*='color: "#1f2937"'],
-body.dark-mode [style*='color: "#0f172a"'] {
-  color: #f9fafb !important;
-}
-
-/* NUCLEAR OPTION: Override ALL inline color styles with dark values */
-body.dark-mode [style*="color: '#374151'"],
-body.dark-mode [style*='color: "#374151"'],
-body.dark-mode *[style*="color: #374151"],
-body.dark-mode *[style*="color:#374151"] {
-  color: #e5e7eb !important;
-}
-
-/* Preserve profit/loss colors but make them brighter */
-body.dark-mode [style*="color: #dc2626"],
-body.dark-mode [style*="color:#dc2626"] {
-  color: #f87171 !important;
-}
-
-/* Side badges (BUY/SELL) - keep them visible */
-body.dark-mode span[style*="padding: 4px 8px"] {
-  border: 1px solid currentColor;
-}
-
-/* Active/selected states */
-body.dark-mode [style*="backgroundColor: #e5e7eb"] {
-  background-color: #374151 !important;
-}
-
-body.dark-mode [style*="backgroundColor: #f3f4f6"] {
-  background-color: #1f2937 !important;
-}
-
-body.dark-mode [style*="backgroundColor: #f9fafb"] {
-  background-color: #0f172a !important;
-}
-
-/* Loading spinner */
-body.dark-mode .loading-spinner {
+/* Input elements */
+body input,
+body select,
+body textarea {
+  background-color: var(--bg-input);
   color: var(--text-primary);
+  border-color: var(--border-color);
 }
 
-/* Error message */
-body.dark-mode .error-message {
-  background-color: #7f1d1d !important;
-  color: #fecaca !important;
-  border-color: #991b1b !important;
+body input::placeholder,
+body textarea::placeholder {
+  color: var(--text-placeholder);
 }
 
-/* Mobile cards */
-body.dark-mode .mobile-account-card {
-  background-color: var(--bg-secondary) !important;
-  border-color: var(--border-color) !important;
+body input:focus,
+body select:focus,
+body textarea:focus {
+  border-color: var(--primary);
+  outline: none;
 }
 
-/* Sync message */
-body.dark-mode [style*="backgroundColor: #dcfce7"][style*="color: #166534"] {
-  background-color: #14532d !important;
-  color: #86efac !important;
+/* Ensure all buttons inherit proper styling */
+body button {
+  font-family: var(--font-display);
 }
 
-body.dark-mode [style*="backgroundColor: #fee2e2"][style*="color: #991b1b"] {
-  background-color: #7f1d1d !important;
-  color: #fca5a5 !important;
+/* Scrollbar consistency */
+* {
+  scrollbar-color: var(--border-color) var(--bg-dark);
 }
 
-/* Preserve button colors but adjust for dark mode */
-body.dark-mode button[style*="backgroundColor: #3b82f6"] {
-  background-color: #2563eb !important;
+/* Transition for smooth theme changes if needed in future */
+body * {
+  transition: background-color 0.15s ease, border-color 0.15s ease;
 }
 
-body.dark-mode button[style*="backgroundColor: #22c55e"] {
-  background-color: #16a34a !important;
-}
-
-/* Scrollbar styling for dark mode */
-body.dark-mode ::-webkit-scrollbar {
-  width: 12px;
-  height: 12px;
-}
-
-body.dark-mode ::-webkit-scrollbar-track {
-  background: var(--bg-secondary);
-}
-
-body.dark-mode ::-webkit-scrollbar-thumb {
-  background: #4b5563;
-  border-radius: 6px;
-}
-
-body.dark-mode ::-webkit-scrollbar-thumb:hover {
-  background: #6b7280;
-}
-
-/* Force dark backgrounds on all white elements */
-body.dark-mode [style*="white"] {
-  background-color: var(--bg-secondary) !important;
-}
-
-/* Table row alternating colors */
-body.dark-mode [style*="backgroundColor"][style*="#f9fafb"],
-body.dark-mode [style*="backgroundColor: #f9fafb"],
-body.dark-mode [style*="backgroundColor:#f9fafb"] {
-  background-color: #0f172a !important;
-}
-
-/* Trade history modal table headers - FORCE DARK BACKGROUND */
-body.dark-mode table thead tr[style*="backgroundColor: #f9fafb"],
-body.dark-mode table thead tr[style*="backgroundColor:#f9fafb"],
-body.dark-mode thead tr[style*="#f9fafb"] {
-  background-color: #1f2937 !important;
-  border-bottom: 2px solid #374151 !important;
-}
-
-/* Ensure tr elements are dark */
-body.dark-mode tr[style*="backgroundColor"] {
-  background-color: var(--bg-secondary) !important;
-}
-
-/* Smooth transitions */
-body.dark-mode * {
-  transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
-}
-
-/* Prevent transition on specific elements */
-body.dark-mode button,
-body.dark-mode input,
-body.dark-mode select {
-  transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
-}
-
-/* Override any remaining white backgrounds */
-body.dark-mode * {
-  scrollbar-color: #4b5563 var(--bg-secondary);
-}
-
-/* Aggressive overrides for inline styles - MUST BE LAST */
-body.dark-mode [style*="background-color: white"],
-body.dark-mode [style*="background-color:white"],
-body.dark-mode [style*="background-color: #fff"],
-body.dark-mode [style*="background-color:#fff"],
-body.dark-mode [style*="background-color: #ffffff"],
-body.dark-mode [style*="background-color:#ffffff"],
-body.dark-mode [style*="backgroundColor: 'white'"],
-body.dark-mode [style*='backgroundColor: "white"'] {
-  background-color: var(--bg-secondary) !important;
-}
-
-/* Force modal overlays to be dark */
-body.dark-mode > div[style*="position: fixed"] {
-  background-color: rgba(0, 0, 0, 0.9) !important;
-}
-
-/* Force modal content to be dark */
-body.dark-mode > div[style*="position: fixed"] > div {
-  background-color: var(--bg-secondary) !important;
-  color: var(--text-primary) !important;
-}
-
-/* Tables inside modals */
-body.dark-mode table tbody tr {
-  background-color: var(--bg-secondary) !important;
-}
-
-body.dark-mode table tbody tr:nth-child(even) {
-  background-color: #0f172a !important;
-}
-
-body.dark-mode table tbody tr:hover {
-  background-color: #374151 !important;
-}
-
-/* ============================================
-   FINAL NUCLEAR OVERRIDES - MUST BE LAST
-   ============================================ */
-
-/* Force ALL text elements to be readable */
-body.dark-mode * {
-  /* Let CSS handle colors, but ensure minimum contrast */
-}
-
-/* Any element with inline style color that's dark, make it light */
-body.dark-mode *[style] {
-  /* This will be overridden by more specific rules above */
-}
-
-/* Table headers with any color inline style */
-body.dark-mode table th[style],
-body.dark-mode table thead th[style] {
-  color: #f9fafb !important;
-}
-
-/* Modal content with dark text colors */
-body.dark-mode div[style*="color"][style*="#"] {
-  color: inherit;
-}
-
-body.dark-mode h2[style*="color"],
-body.dark-mode h3[style*="color"],
-body.dark-mode div[style*="fontSize"][style*="color"] {
-  color: #f9fafb !important;
-}
-
-/* Ensure table content text is visible */
-body.dark-mode table tbody td {
-  color: #f9fafb !important;
-}
-
-body.dark-mode table thead th {
-  color: #f9fafb !important;
+/* Disable transitions on hover states */
+body button,
+body a,
+body input {
+  transition: background-color 0.1s ease, color 0.1s ease, border-color 0.1s ease;
 }

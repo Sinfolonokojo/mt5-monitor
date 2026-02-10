@@ -1,0 +1,28 @@
+# VPS09 - Harrison Arias
+vps_name: VPS09
+account_holder: "Harrison Arias"
+
+agents:
+  - name: "VPS09-FundedNext"
+    port: 8000
+    terminal_path: "{{ mt5_terminals.fundednext }}"
+    display_name: "FN - Harrison Arias"
+    account_holder: "{{ account_holder }}"
+    prop_firm: "FN"
+    initial_balance: 100000.0
+
+  - name: "VPS09-FivePercent"
+    port: 8001
+    terminal_path: "{{ mt5_terminals.fivepercent }}"
+    display_name: "T5 - Harrison Arias"
+    account_holder: "{{ account_holder }}"
+    prop_firm: "T5"
+    initial_balance: 100000.0
+
+  - name: "VPS09-FTMO"
+    port: 8002
+    terminal_path: "{{ mt5_terminals.ftmo }}"
+    display_name: "FTMO - Harrison Arias"
+    account_holder: "{{ account_holder }}"
+    prop_firm: "FTMO"
+    initial_balance: 100000.0

@@ -1,0 +1,28 @@
+# VPS19 - Miguel Alzate
+vps_name: VPS19
+account_holder: "Miguel Alzate"
+
+agents:
+  - name: "VPS19-FundedNext"
+    port: 8000
+    terminal_path: "{{ mt5_terminals.fundednext }}"
+    display_name: "FN - Miguel Alzate"
+    account_holder: "{{ account_holder }}"
+    prop_firm: "FN"
+    initial_balance: 100000.0
+
+  - name: "VPS19-FivePercent"
+    port: 8001
+    terminal_path: "{{ mt5_terminals.fivepercent }}"
+    display_name: "T5 - Miguel Alzate"
+    account_holder: "{{ account_holder }}"
+    prop_firm: "T5"
+    initial_balance: 100000.0
+
+  - name: "VPS19-FTMO"
+    port: 8002
+    terminal_path: "{{ mt5_terminals.ftmo }}"
+    display_name: "FTMO - Miguel Alzate"
+    account_holder: "{{ account_holder }}"
+    prop_firm: "FTMO"
+    initial_balance: 100000.0

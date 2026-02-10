@@ -1,0 +1,173 @@
+---
+# Deploy code updates to VPS agents
+# Usage: ansible-playbook playbooks/deploy.yml -i inventory/hosts.yml
+# Usage: ansible-playbook playbooks/deploy.yml -i inventory/hosts.yml --limit vps02
+#
+# WARNING: vps26 (194.163.152.137) also hosts:
+#   - Main backend (FastAPI)
+#   - Cloudflare tunnel
+# This playbook ONLY stops vps-agent processes, not all Python processes.
+# Do NOT modify the stop task to kill all Python processes!
+
+- name: Deploy VPS Agent Updates
+  hosts: all_vps
+  gather_facts: yes
+  vars:
+    timestamp: "{{ ansible_date_time.iso8601_basic_short }}"
+
+  tasks:
+    # ========== CHECK PYTHON ==========
+    - name: Check if Python is installed
+      win_shell: python --version
+      register: python_check
+      ignore_errors: yes
+
+    - name: Install Python via winget if missing
+      win_shell: |
+        winget install Python.Python.3.11 --accept-package-agreements --accept-source-agreements --silent
+      when: python_check.rc != 0
+      ignore_errors: yes
+
+    - name: Wait for Python installation
+      pause:
+        seconds: 5
+      when: python_check.rc != 0
+
+    # ========== BACKUP CURRENT VERSION ==========
+    - name: Check if agent directory exists
+      win_stat:
+        path: "{{ vps_agent_path }}"
+      register: agent_dir_check
+
+    - name: Create backup directory
+      win_file:
+        path: "{{ backup_path }}"
+        state: directory
+      when: agent_dir_check.stat.exists
+
+    - name: Create backup of current deployment
+      win_copy:
+        src: "{{ vps_agent_path }}\\"
+        dest: "{{ backup_path }}\\backup-{{ timestamp }}\\"
+        remote_src: yes
+      when: agent_dir_check.stat.exists
+      ignore_errors: yes
+
+    # ========== STOP CURRENT AGENTS ==========
+    # NOTE: Only stop vps-agent processes, NOT all Python processes
+    # vps26 runs main-backend and cloudflare tunnel which must stay running
+    - name: Stop VPSAgentLauncher scheduled task
+      win_shell: |
+        Stop-ScheduledTask -TaskName "VPSAgentLauncher" -ErrorAction SilentlyContinue
+      ignore_errors: yes
+
+    - name: Stop vps-agent Python processes only
+      win_shell: |
+        # Only stop Python processes running from vps-agent directory
+        Get-WmiObject Win32_Process -Filter "Name='python.exe'" | ForEach-Object {
+          if ($_.CommandLine -like "*vps-agent*" -or $_.CommandLine -like "*launcher.py*") {
+            Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
+          }
+        }
+      ignore_errors: yes
+
+    - name: Wait for processes to stop
+      pause:
+        seconds: 3
+
+    # ========== DEPLOY NEW CODE ==========
+    - name: Create vps-agent directory if not exists
+      win_file:
+        path: "{{ vps_agent_path }}"
+        state: directory
+
+    - name: Create logs directory
+      win_file:
+        path: "{{ vps_agent_path }}\\logs"
+        state: directory
+
+    - name: Copy updated application code
+      win_copy:
+        src: ../../vps-agent/app/
+        dest: "{{ vps_agent_path }}\\app\\"
+
+    - name: Copy updated launcher
+      win_copy:
+        src: ../../vps-agent/launcher.py
+        dest: "{{ vps_agent_path }}\\launcher.py"
+
+    - name: Copy updated requirements
+      win_copy:
+        src: ../../vps-agent/requirements.txt
+        dest: "{{ vps_agent_path }}\\requirements.txt"
+
+    # ========== COPY agents.json (pre-generated) ==========
+    - name: Check if pre-generated agents.json exists
+      local_action:
+        module: stat
+        path: "{{ playbook_dir }}/../host_files/{{ inventory_hostname }}_agents.json"
+      register: custom_agents_json
+
+    - name: Copy custom agents.json if exists
+      win_copy:
+        src: "{{ playbook_dir }}/../host_files/{{ inventory_hostname }}_agents.json"
+        dest: "{{ vps_agent_path }}\\agents.json"
+      when: custom_agents_json.stat.exists
+
+    # ========== INSTALL DEPENDENCIES ==========
+    - name: Install/update requirements
+      win_shell: python -m pip install -r requirements.txt --quiet
+      args:
+        chdir: "{{ vps_agent_path }}"
+      ignore_errors: yes
+
+    # ========== CONFIGURE FIREWALL ==========
+    - name: Open firewall for agent ports
+      win_shell: |
+        netsh advfirewall firewall add rule name="VPS Agent {{ item }}" dir=in action=allow protocol=TCP localport={{ item }}
+      loop: "{{ agent_ports }}"
+      ignore_errors: yes
+
+    # ========== START AGENTS ==========
+    - name: Get Python path
+      win_shell: (Get-Command python).Source
+      register: python_path
+
+    - name: Create scheduled task for launcher
+      win_shell: >-
+        Unregister-ScheduledTask -TaskName "VPSAgentLauncher" -Confirm:$false -ErrorAction SilentlyContinue;
+        $action = New-ScheduledTaskAction -Execute "{{ python_path.stdout | trim }}" -Argument "launcher.py" -WorkingDirectory "{{ vps_agent_path }}";
+        $principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest;
+        $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -ExecutionTimeLimit (New-TimeSpan -Days 365);
+        Register-ScheduledTask -TaskName "VPSAgentLauncher" -Action $action -Principal $principal -Settings $settings -Force
+
+    - name: Start the scheduled task
+      win_shell: Start-ScheduledTask -TaskName "VPSAgentLauncher"
+
+    - name: Wait for agents to start
+      pause:
+        seconds: 12
+
+    # ========== VERIFY DEPLOYMENT ==========
+    - name: Check agent health
+      win_uri:
+        url: "http://localhost:{{ item }}/health"
+        method: GET
+        status_code: 200
+        timeout: 5
+      loop: "{{ agent_ports }}"
+      register: health_checks
+      ignore_errors: yes
+
+    - name: Deployment result
+      debug:
+        msg: |
+          ═══════════════════════════════════════════════════
+           {{ inventory_hostname | upper }} DEPLOYMENT COMPLETE
+          ═══════════════════════════════════════════════════
+           Backup:  {{ backup_path }}\backup-{{ timestamp }}
+           Status:  Deployment finished
+
+           REMINDER: Update main-backend/.env VPS_AGENTS_JSON
+           if this is a new VPS!
+          ═══════════════════════════════════════════════════

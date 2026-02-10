@@ -1,0 +1,16 @@
+# Shared variables for all VPS
+vps_agent_path: 'C:\Users\Administrator\Desktop\vps-agent'
+backup_path: 'C:\Users\Administrator\Desktop\backups'
+python_installer_url: "https://www.python.org/ftp/python/3.11.0/python-3.11.0-amd64.exe"
+
+# MT5 Terminal paths (shared across all VPS)
+mt5_terminals:
+  fundednext: 'C:\Program Files\FundedNext MT5 Terminal\terminal64.exe'
+  fivepercent: 'C:\Program Files\Five Percent Online MetaTrader 5\terminal64.exe'
+  ftmo: 'C:\Program Files\FTMO Global Markets MT5 Terminal\terminal64.exe'
+
+# Ports used by agents
+agent_ports:
+  - 8000
+  - 8001
+  - 8002

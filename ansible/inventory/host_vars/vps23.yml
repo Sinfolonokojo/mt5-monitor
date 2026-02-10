@@ -1,0 +1,28 @@
+# VPS23 - Victory Villada Restrepo
+vps_name: VPS23
+account_holder: "Victory Villada Restrepo"
+
+agents:
+  - name: "VPS23-FundedNext"
+    port: 8000
+    terminal_path: "{{ mt5_terminals.fundednext }}"
+    display_name: "FN - Victory Villada Restrepo"
+    account_holder: "{{ account_holder }}"
+    prop_firm: "FN"
+    initial_balance: 100000.0
+
+  - name: "VPS23-FivePercent"
+    port: 8001
+    terminal_path: "{{ mt5_terminals.fivepercent }}"
+    display_name: "T5 - Victory Villada Restrepo"
+    account_holder: "{{ account_holder }}"
+    prop_firm: "T5"
+    initial_balance: 100000.0
+
+  - name: "VPS23-FTMO"
+    port: 8002
+    terminal_path: "{{ mt5_terminals.ftmo }}"
+    display_name: "FTMO - Victory Villada Restrepo"
+    account_holder: "{{ account_holder }}"
+    prop_firm: "FTMO"
+    initial_balance: 100000.0

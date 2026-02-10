@@ -13,7 +13,8 @@ const VersusTab = ({ accounts }) => {
     createVersus,
     executeCongelar,
     executeTransferir,
-    cancelVersus
+    cancelVersus,
+    deleteVersus
   } = useVersus();
 
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -63,6 +64,16 @@ const VersusTab = ({ accounts }) => {
     }
   };
 
+  const handleDelete = async (versusId) => {
+    try {
+      await deleteVersus(versusId);
+      setNotification({ message: 'Versus eliminado exitosamente', type: 'success' });
+    } catch (err) {
+      setNotification({ message: err.message || 'Error al eliminar Versus', type: 'error' });
+      throw err;
+    }
+  };
+
   // Sort versus list: pending and congelado first, then by creation date (newest first)
   const sortedVersusList = [...versusList].sort((a, b) => {
     const statusOrder = { pending: 0, congelado: 1, error: 2, transferido: 3, completed: 4 };
@@ -72,6 +83,10 @@ const VersusTab = ({ accounts }) => {
     if (orderA !== orderB) return orderA - orderB;
     return new Date(b.created_at) - new Date(a.created_at);
   });
+
+  // Calculate stats
+  const activeCount = versusList.filter(v => v.status === 'pending' || v.status === 'congelado').length;
+  const completedCount = versusList.filter(v => v.status === 'transferido' || v.status === 'completed').length;
 
   return (
     <div style={{ padding: '24px' }}>
@@ -84,110 +99,125 @@ const VersusTab = ({ accounts }) => {
         />
       )}
 
-      {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-        <div>
-          <h2 style={{ margin: 0, fontSize: '24px', fontWeight: '700', color: '#111827' }}>
-            Versus Trading
-          </h2>
-          <p style={{ margin: '8px 0 0', fontSize: '14px', color: '#6b7280' }}>
-            Estrategia de cobertura: Cuenta A y B toman posiciones opuestas con TP/SL espejados
-          </p>
+      {/* Stats Header */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+        gap: '16px',
+        marginBottom: '24px',
+      }}>
+        <div style={statCardStyle}>
+          <div style={statLabelStyle}>Coberturas Activas</div>
+          <div style={statValueStyle}>{activeCount}</div>
         </div>
-
-        <button
-          onClick={() => setShowCreateModal(true)}
-          disabled={loading}
-          style={{
-            padding: '12px 24px',
-            backgroundColor: '#3b82f6',
-            color: 'white',
-            border: 'none',
-            borderRadius: '8px',
-            fontSize: '14px',
-            fontWeight: '600',
-            cursor: loading ? 'not-allowed' : 'pointer',
-            opacity: loading ? 0.6 : 1,
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-          }}
-        >
-          <span style={{ fontSize: '18px' }}>+</span>
-          Agregar Versus
-        </button>
+        <div style={statCardStyle}>
+          <div style={statLabelStyle}>Completados</div>
+          <div style={statValueStyle}>{completedCount}</div>
+        </div>
+        <div style={statCardStyle}>
+          <div style={statLabelStyle}>Total Versus</div>
+          <div style={statValueStyle}>{versusList.length}</div>
+        </div>
+        <div style={{ ...statCardStyle, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <button
+            onClick={() => setShowCreateModal(true)}
+            disabled={loading}
+            className="btn btn-primary"
+            style={{ width: '100%' }}
+          >
+            <span style={{ fontSize: '16px', marginRight: '8px' }}>+</span>
+            Crear Versus
+          </button>
+        </div>
       </div>
 
       {/* Error Message */}
       {error && (
-        <div
-          style={{
-            padding: '16px',
-            backgroundColor: '#fee2e2',
-            border: '1px solid #fecaca',
-            borderRadius: '8px',
-            color: '#dc2626',
-            fontSize: '14px',
-            marginBottom: '24px',
-          }}
-        >
+        <div style={{
+          padding: '16px',
+          backgroundColor: 'rgba(239, 68, 68, 0.1)',
+          border: '1px solid rgba(239, 68, 68, 0.3)',
+          borderRadius: '8px',
+          color: 'var(--red)',
+          fontSize: '14px',
+          marginBottom: '24px',
+        }}>
           {error}
         </div>
       )}
 
       {/* Loading State */}
       {loading && versusList.length === 0 && (
-        <div style={{ textAlign: 'center', padding: '48px', color: '#6b7280' }}>
-          <div style={{ fontSize: '16px' }}>Cargando...</div>
+        <div style={{
+          textAlign: 'center',
+          padding: '48px',
+          color: 'var(--text-muted)',
+        }}>
+          <div style={{
+            width: '32px',
+            height: '32px',
+            border: '3px solid var(--border-color)',
+            borderTopColor: 'var(--primary)',
+            borderRadius: '50%',
+            animation: 'spin 1s linear infinite',
+            margin: '0 auto 16px',
+          }} />
+          <div style={{ fontSize: '14px' }}>Cargando...</div>
         </div>
       )}
 
       {/* Empty State */}
       {!loading && versusList.length === 0 && (
-        <div
-          style={{
-            textAlign: 'center',
-            padding: '48px',
-            backgroundColor: '#f9fafb',
-            borderRadius: '12px',
-            border: '2px dashed #e5e7eb',
-          }}
-        >
-          <div style={{ fontSize: '48px', marginBottom: '16px' }}>&#8703;</div>
-          <div style={{ fontSize: '18px', fontWeight: '600', color: '#374151', marginBottom: '8px' }}>
-            No hay Versus configurados
+        <div style={{
+          textAlign: 'center',
+          padding: '60px 24px',
+          backgroundColor: 'var(--bg-surface)',
+          borderRadius: '12px',
+          border: '2px dashed var(--border-color)',
+        }}>
+          <div style={{ fontSize: '48px', marginBottom: '16px', opacity: 0.5 }}>⚡</div>
+          <div style={{
+            fontSize: '18px',
+            fontWeight: '600',
+            color: 'var(--text-primary)',
+            marginBottom: '8px',
+          }}>
+            No hay Versus Configurados
           </div>
-          <div style={{ fontSize: '14px', color: '#6b7280', marginBottom: '24px' }}>
-            Crea un nuevo Versus para comenzar con la estrategia de cobertura
+          <div style={{
+            fontSize: '14px',
+            color: 'var(--text-muted)',
+            marginBottom: '24px',
+            maxWidth: '400px',
+            margin: '0 auto 24px',
+          }}>
+            Crea un nuevo Versus para iniciar la estrategia de cobertura. La Cuenta A y B tomarán posiciones opuestas con TP/SL espejo.
           </div>
           <button
             onClick={() => setShowCreateModal(true)}
-            style={{
-              padding: '12px 24px',
-              backgroundColor: '#3b82f6',
-              color: 'white',
-              border: 'none',
-              borderRadius: '8px',
-              fontSize: '14px',
-              fontWeight: '600',
-              cursor: 'pointer',
-            }}
+            className="btn btn-primary"
           >
             Crear Primer Versus
           </button>
         </div>
       )}
 
-      {/* Versus List */}
+      {/* Versus Grid */}
       {sortedVersusList.length > 0 && (
-        <div>
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fill, minmax(400px, 1fr))',
+          gap: '20px',
+        }}>
           {sortedVersusList.map(versus => (
             <VersusCard
               key={versus.id}
               versus={versus}
+              accounts={accounts || []}
               onCongelar={handleCongelar}
               onTransferir={handleTransferir}
               onCancel={handleCancel}
+              onDelete={handleDelete}
               loading={loading}
             />
           ))}
@@ -204,6 +234,29 @@ const VersusTab = ({ accounts }) => {
       )}
     </div>
   );
+};
+
+const statCardStyle = {
+  backgroundColor: 'var(--bg-surface)',
+  borderRadius: '12px',
+  border: '1px solid var(--border-color)',
+  padding: '20px',
+};
+
+const statLabelStyle = {
+  fontSize: '12px',
+  fontWeight: '500',
+  color: 'var(--text-muted)',
+  textTransform: 'uppercase',
+  letterSpacing: '0.05em',
+  marginBottom: '8px',
+};
+
+const statValueStyle = {
+  fontSize: '28px',
+  fontWeight: '700',
+  color: 'var(--text-primary)',
+  fontFamily: 'var(--font-mono)',
 };
 
 export default VersusTab;

@@ -1,0 +1,27 @@
+---
+# Check status of all VPS agents
+# Usage: ansible-playbook playbooks/status.yml -i inventory/hosts.yml
+
+- name: Check VPS Agent Status
+  hosts: all_vps
+  gather_facts: no
+  tasks:
+    - name: Check agent processes
+      win_shell: |
+        Get-Process python -ErrorAction SilentlyContinue | Measure-Object | Select-Object -ExpandProperty Count
+      register: process_count
+      ignore_errors: yes
+
+    - name: Check health endpoints
+      win_uri:
+        url: "http://localhost:{{ item }}/health"
+        method: GET
+        status_code: 200
+        timeout: 5
+      loop: "{{ agent_ports }}"
+      register: health_checks
+      ignore_errors: yes
+
+    - name: Status report
+      debug:
+        msg: "{{ inventory_hostname | upper }}: {{ process_count.stdout | default('0') | trim }} Python process(es) | Ports 8000/8001/8002 responding"

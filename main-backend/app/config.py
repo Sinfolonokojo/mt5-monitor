@@ -43,6 +43,10 @@ class Settings(BaseSettings):
     # Versus Feature Settings
     VERSUS_ENABLED: bool = False  # Set to True to enable Versus hedging feature
 
+    # Telegram Notifications
+    TELEGRAM_BOT_TOKEN: str = ""
+    TELEGRAM_CHAT_ID: str = ""
+
     @property
     def VPS_AGENTS(self) -> List[Dict]:
         """Parse VPS agents from JSON string"""

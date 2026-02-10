@@ -1,10 +1,10 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import apiService from '../services/api';
 
 const TradeModal = ({ account, onClose, onSuccess }) => {
   const initialFormData = {
-    symbol: 'EURUSD',
-    order_type: 'BUY',
+    symbol: 'XAUUSD',
+    order_type: null, // null until user selects BUY or SELL
     lot: 0.01,
     sl: '',
     tp: '',
@@ -12,9 +12,9 @@ const TradeModal = ({ account, onClose, onSuccess }) => {
   };
 
   const [formData, setFormData] = useState(initialFormData);
+  const [orderMode, setOrderMode] = useState('market'); // 'market' or 'limit'
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [showConfirm, setShowConfirm] = useState(false);
 
   if (!account) return null;
 
@@ -27,13 +27,24 @@ const TradeModal = ({ account, onClose, onSuccess }) => {
     setError(null);
   };
 
+  const adjustLot = (delta) => {
+    const newLot = Math.max(0.01, Math.min(100, parseFloat(formData.lot || 0) + delta));
+    setFormData(prev => ({ ...prev, lot: newLot.toFixed(2) }));
+  };
+
   const validateForm = () => {
     if (!formData.symbol || formData.symbol.trim() === '') {
       setError('El símbolo es requerido');
       return false;
     }
 
-    if (formData.lot < 0.01 || formData.lot > 100) {
+    if (!formData.order_type) {
+      setError('Selecciona BUY o SELL');
+      return false;
+    }
+
+    const lot = parseFloat(formData.lot);
+    if (isNaN(lot) || lot < 0.01 || lot > 100) {
       setError('El tamaño del lote debe estar entre 0.01 y 100');
       return false;
     }
@@ -51,25 +62,33 @@ const TradeModal = ({ account, onClose, onSuccess }) => {
     return true;
   };
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    if (!validateForm()) return;
-    setShowConfirm(true);
-  };
+  const handleExecuteTrade = async (orderType) => {
+    const updatedFormData = { ...formData, order_type: orderType };
+    setFormData(updatedFormData);
 
-  const handleConfirmTrade = async () => {
+    // Validate
+    if (!formData.symbol || formData.symbol.trim() === '') {
+      setError('El símbolo es requerido');
+      return;
+    }
+
+    const lot = parseFloat(formData.lot);
+    if (isNaN(lot) || lot < 0.01 || lot > 100) {
+      setError('El tamaño del lote debe estar entre 0.01 y 100');
+      return;
+    }
+
     setLoading(true);
     setError(null);
 
     try {
       const positionData = {
         symbol: formData.symbol.trim().toUpperCase(),
-        lot: parseFloat(formData.lot),
-        order_type: formData.order_type,
+        lot: lot,
+        order_type: orderType,
         comment: formData.comment || 'MT5Monitor'
       };
 
-      // Add SL/TP only if provided
       if (formData.sl !== '') {
         positionData.sl = parseFloat(formData.sl);
       }
@@ -80,12 +99,9 @@ const TradeModal = ({ account, onClose, onSuccess }) => {
       const result = await apiService.openPosition(account.account_number, positionData);
 
       if (result.success) {
-        // Reset form for next trade
-        setFormData(initialFormData);
-        setShowConfirm(false);
+        setFormData({ ...initialFormData, symbol: formData.symbol }); // Keep symbol for rapid trading
         setError(null);
 
-        // Call success callback (shows notification and refreshes account)
         if (onSuccess) {
           onSuccess({
             symbol: positionData.symbol,
@@ -93,20 +109,34 @@ const TradeModal = ({ account, onClose, onSuccess }) => {
             lot: positionData.lot,
           });
         }
-
-        // Keep modal open for rapid trading
-        // User can manually close with X button or Cancel
       } else {
         setError(result.message || 'Error al abrir la posición');
-        setShowConfirm(false);
       }
     } catch (err) {
       setError(err.message || 'Error al abrir la posición');
-      setShowConfirm(false);
     } finally {
       setLoading(false);
     }
   };
+
+  // Calculate estimated risk (simplified)
+  const calculateRisk = () => {
+    const lot = parseFloat(formData.lot) || 0;
+    const sl = parseFloat(formData.sl);
+    if (!sl || isNaN(sl)) return null;
+
+    // Rough estimate: assumes ~$10 per pip per lot for forex
+    const estimatedLoss = lot * 100 * 10; // Very rough estimate
+    const accountBalance = account.balance || 100000;
+    const riskPercent = ((estimatedLoss / accountBalance) * 100).toFixed(2);
+
+    return {
+      loss: estimatedLoss.toFixed(2),
+      percent: riskPercent
+    };
+  };
+
+  const risk = calculateRisk();
 
   return (
     <div
@@ -116,355 +146,471 @@ const TradeModal = ({ account, onClose, onSuccess }) => {
         left: 0,
         right: 0,
         bottom: 0,
-        backgroundColor: 'rgba(0, 0, 0, 0.5)',
+        backgroundColor: 'rgba(0, 0, 0, 0.85)',
         display: 'flex',
         justifyContent: 'center',
         alignItems: 'center',
         zIndex: 1000,
         padding: '16px',
+        backdropFilter: 'blur(4px)',
       }}
       onClick={onClose}
     >
       <div
         style={{
-          backgroundColor: 'white',
-          borderRadius: '12px',
-          maxWidth: '500px',
+          backgroundColor: 'var(--bg-dark)',
+          borderRadius: 'var(--radius-xl)',
+          maxWidth: '480px',
           width: '100%',
-          maxHeight: '90vh',
-          overflow: 'auto',
-          boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
+          overflow: 'hidden',
+          boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.6)',
+          border: '1px solid var(--border-color)',
+          display: 'flex',
+          flexDirection: 'column',
         }}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
         <div
           style={{
-            padding: '24px',
-            borderBottom: '1px solid #e5e7eb',
+            padding: '16px 20px',
+            borderBottom: '1px solid var(--border-color)',
             display: 'flex',
-            justifyContent: 'space-between',
             alignItems: 'center',
+            justifyContent: 'space-between',
+            backgroundColor: 'var(--bg-dark)',
           }}
         >
-          <h2 style={{ margin: 0, fontSize: '24px', fontWeight: '700', color: '#111827' }}>
-            Abrir Operación
-          </h2>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <h2 style={{
+              margin: 0,
+              fontSize: '13px',
+              fontWeight: '700',
+              color: 'var(--text-primary)',
+              textTransform: 'uppercase',
+              letterSpacing: '0.1em'
+            }}>
+              Ejecutar Operación
+            </h2>
+            {/* Order Type Toggle */}
+            <div style={{
+              display: 'flex',
+              backgroundColor: 'var(--bg-surface)',
+              padding: '4px',
+              borderRadius: 'var(--radius)',
+              border: '1px solid var(--border-color)',
+            }}>
+              <button
+                onClick={() => setOrderMode('market')}
+                style={{
+                  padding: '6px 14px',
+                  fontSize: '10px',
+                  fontWeight: '700',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.05em',
+                  backgroundColor: orderMode === 'market' ? 'var(--border-color)' : 'transparent',
+                  color: orderMode === 'market' ? 'var(--text-primary)' : 'var(--text-muted)',
+                  border: 'none',
+                  borderRadius: 'var(--radius-sm)',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s',
+                }}
+              >
+                Market
+              </button>
+              <button
+                onClick={() => setOrderMode('limit')}
+                style={{
+                  padding: '6px 14px',
+                  fontSize: '10px',
+                  fontWeight: '700',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.05em',
+                  backgroundColor: orderMode === 'limit' ? 'var(--border-color)' : 'transparent',
+                  color: orderMode === 'limit' ? 'var(--text-primary)' : 'var(--text-muted)',
+                  border: 'none',
+                  borderRadius: 'var(--radius-sm)',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s',
+                }}
+              >
+                Limit
+              </button>
+            </div>
+          </div>
           <button
             onClick={onClose}
             style={{
-              background: 'none',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: '32px',
+              height: '32px',
+              backgroundColor: 'transparent',
+              color: 'var(--text-muted)',
               border: 'none',
-              fontSize: '28px',
+              borderRadius: 'var(--radius)',
+              fontSize: '18px',
               cursor: 'pointer',
-              color: '#6b7280',
-              lineHeight: '1',
-              padding: '0',
+              transition: 'all 0.2s',
             }}
           >
             ×
           </button>
         </div>
 
-        {/* Account Info */}
-        <div
-          style={{
-            padding: '16px 24px',
-            backgroundColor: '#f9fafb',
-            borderBottom: '1px solid #e5e7eb',
-          }}
-        >
-          <div style={{ fontSize: '14px', color: '#6b7280' }}>Cuenta</div>
-          <div style={{ fontSize: '18px', fontWeight: '600', color: '#111827', marginTop: '4px' }}>
-            {account.account_name} (#{account.account_number})
-          </div>
-        </div>
-
-        {/* Form */}
-        <form onSubmit={handleSubmit} style={{ padding: '24px' }}>
+        {/* Form Content */}
+        <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
           {/* Error Message */}
           {error && (
             <div
               style={{
                 padding: '12px',
-                backgroundColor: '#fee2e2',
-                border: '1px solid #fecaca',
-                borderRadius: '6px',
-                color: '#dc2626',
-                fontSize: '14px',
-                marginBottom: '20px',
+                backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                border: '1px solid rgba(239, 68, 68, 0.3)',
+                borderRadius: 'var(--radius)',
+                color: 'var(--red)',
+                fontSize: '13px',
               }}
             >
-              {error}
+              ⚠️ {error}
             </div>
           )}
 
-          {/* Symbol */}
-          <div style={{ marginBottom: '20px' }}>
-            <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', color: '#374151', marginBottom: '8px' }}>
-              Símbolo *
-            </label>
-            <input
-              type="text"
-              name="symbol"
-              value={formData.symbol}
-              onChange={handleInputChange}
-              placeholder="EURUSD"
-              required
-              style={{
-                width: '100%',
-                padding: '10px 12px',
-                border: '1px solid #d1d5db',
-                borderRadius: '6px',
+          {/* Symbol Input */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <label style={labelStyle}>Símbolo</label>
+            <div style={{ position: 'relative' }}>
+              <span style={{
+                position: 'absolute',
+                left: '12px',
+                top: '50%',
+                transform: 'translateY(-50%)',
+                color: 'var(--text-muted)',
                 fontSize: '14px',
-                boxSizing: 'border-box',
-              }}
-            />
-          </div>
-
-          {/* Order Type */}
-          <div style={{ marginBottom: '20px' }}>
-            <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', color: '#374151', marginBottom: '8px' }}>
-              Tipo de Orden *
-            </label>
-            <div style={{ display: 'flex', gap: '12px' }}>
-              <button
-                type="button"
-                onClick={() => setFormData(prev => ({ ...prev, order_type: 'BUY' }))}
+              }}>
+                🔍
+              </span>
+              <input
+                type="text"
+                name="symbol"
+                value={formData.symbol}
+                onChange={handleInputChange}
+                placeholder="EURUSD"
                 style={{
-                  flex: 1,
-                  padding: '10px',
-                  backgroundColor: formData.order_type === 'BUY' ? '#22c55e' : '#f3f4f6',
-                  color: formData.order_type === 'BUY' ? 'white' : '#374151',
-                  border: 'none',
-                  borderRadius: '6px',
-                  fontSize: '14px',
-                  fontWeight: '600',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s',
+                  ...inputStyle,
+                  paddingLeft: '38px',
+                  textTransform: 'uppercase',
                 }}
-              >
-                BUY
-              </button>
-              <button
-                type="button"
-                onClick={() => setFormData(prev => ({ ...prev, order_type: 'SELL' }))}
-                style={{
-                  flex: 1,
-                  padding: '10px',
-                  backgroundColor: formData.order_type === 'SELL' ? '#ef4444' : '#f3f4f6',
-                  color: formData.order_type === 'SELL' ? 'white' : '#374151',
-                  border: 'none',
-                  borderRadius: '6px',
-                  fontSize: '14px',
-                  fontWeight: '600',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s',
-                }}
-              >
-                SELL
-              </button>
+              />
             </div>
           </div>
 
-          {/* Lot Size */}
-          <div style={{ marginBottom: '20px' }}>
-            <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', color: '#374151', marginBottom: '8px' }}>
-              Tamaño del Lote *
-            </label>
-            <input
-              type="number"
-              name="lot"
-              value={formData.lot}
-              onChange={handleInputChange}
-              step="0.01"
-              min="0.01"
-              max="100"
-              required
-              style={{
-                width: '100%',
-                padding: '10px 12px',
-                border: '1px solid #d1d5db',
-                borderRadius: '6px',
-                fontSize: '14px',
-                boxSizing: 'border-box',
-              }}
-            />
-          </div>
-
-          {/* Stop Loss */}
-          <div style={{ marginBottom: '20px' }}>
-            <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', color: '#374151', marginBottom: '8px' }}>
-              Stop Loss (opcional)
-            </label>
-            <input
-              type="number"
-              name="sl"
-              value={formData.sl}
-              onChange={handleInputChange}
-              step="0.00001"
-              min="0"
-              placeholder="Dejar vacío para sin SL"
-              style={{
-                width: '100%',
-                padding: '10px 12px',
-                border: '1px solid #d1d5db',
-                borderRadius: '6px',
-                fontSize: '14px',
-                boxSizing: 'border-box',
-              }}
-            />
-          </div>
-
-          {/* Take Profit */}
-          <div style={{ marginBottom: '20px' }}>
-            <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', color: '#374151', marginBottom: '8px' }}>
-              Take Profit (opcional)
-            </label>
-            <input
-              type="number"
-              name="tp"
-              value={formData.tp}
-              onChange={handleInputChange}
-              step="0.00001"
-              min="0"
-              placeholder="Dejar vacío para sin TP"
-              style={{
-                width: '100%',
-                padding: '10px 12px',
-                border: '1px solid #d1d5db',
-                borderRadius: '6px',
-                fontSize: '14px',
-                boxSizing: 'border-box',
-              }}
-            />
-          </div>
-
-          {/* Comment */}
-          <div style={{ marginBottom: '24px' }}>
-            <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', color: '#374151', marginBottom: '8px' }}>
-              Comentario
-            </label>
-            <input
-              type="text"
-              name="comment"
-              value={formData.comment}
-              onChange={handleInputChange}
-              placeholder="MT5Monitor"
-              style={{
-                width: '100%',
-                padding: '10px 12px',
-                border: '1px solid #d1d5db',
-                borderRadius: '6px',
-                fontSize: '14px',
-                boxSizing: 'border-box',
-              }}
-            />
-          </div>
-
-          {/* Actions */}
-          {!showConfirm ? (
-            <div style={{ display: 'flex', gap: '12px' }}>
-              <button
-                type="button"
-                onClick={onClose}
-                style={{
-                  flex: 1,
-                  padding: '12px',
-                  backgroundColor: '#f3f4f6',
-                  color: '#374151',
-                  border: 'none',
-                  borderRadius: '6px',
-                  fontSize: '14px',
-                  fontWeight: '600',
-                  cursor: 'pointer',
-                }}
-              >
-                Cancelar
-              </button>
-              <button
-                type="submit"
-                disabled={loading}
-                style={{
-                  flex: 1,
-                  padding: '12px',
-                  backgroundColor: '#3b82f6',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '6px',
-                  fontSize: '14px',
-                  fontWeight: '600',
-                  cursor: loading ? 'not-allowed' : 'pointer',
-                  opacity: loading ? 0.6 : 1,
-                }}
-              >
-                {loading ? 'Abriendo...' : 'Abrir Posición'}
-              </button>
+          {/* Lots and Entry Price Row */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+            {/* Lots */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <label style={labelStyle}>Lotes</label>
+              <div style={{ display: 'flex' }}>
+                <button
+                  onClick={() => adjustLot(-0.01)}
+                  style={lotBtnStyle}
+                >
+                  −
+                </button>
+                <input
+                  type="number"
+                  name="lot"
+                  value={formData.lot}
+                  onChange={handleInputChange}
+                  step="0.01"
+                  min="0.01"
+                  max="100"
+                  style={{
+                    ...inputStyle,
+                    borderRadius: 0,
+                    borderLeft: 'none',
+                    borderRight: 'none',
+                    textAlign: 'center',
+                    flex: 1,
+                  }}
+                />
+                <button
+                  onClick={() => adjustLot(0.01)}
+                  style={{ ...lotBtnStyle, borderRadius: '0 var(--radius) var(--radius) 0' }}
+                >
+                  +
+                </button>
+              </div>
             </div>
-          ) : (
-            <div>
-              <div
+
+            {/* Entry Price (disabled for market orders) */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', opacity: orderMode === 'market' ? 0.5 : 1 }}>
+              <label style={labelStyle}>Precio Entrada</label>
+              <input
+                type="number"
+                disabled={orderMode === 'market'}
+                placeholder={orderMode === 'market' ? 'Market' : 'Precio'}
                 style={{
-                  padding: '16px',
-                  backgroundColor: '#fef3c7',
-                  border: '1px solid #fde68a',
-                  borderRadius: '6px',
-                  marginBottom: '16px',
+                  ...inputStyle,
+                  cursor: orderMode === 'market' ? 'not-allowed' : 'text',
+                  backgroundColor: orderMode === 'market' ? 'var(--bg-dark)' : 'var(--bg-surface)',
                 }}
-              >
-                <div style={{ fontSize: '14px', fontWeight: '600', color: '#92400e', marginBottom: '8px' }}>
-                  Confirmar Operación
+              />
+            </div>
+          </div>
+
+          {/* TP / SL Row */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+            {/* Take Profit */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <label style={{ ...labelStyle, color: 'var(--green)' }}>Take Profit (pips)</label>
+              <input
+                type="number"
+                name="tp"
+                value={formData.tp}
+                onChange={handleInputChange}
+                step="1"
+                min="0"
+                placeholder="Ej: 50"
+                style={inputStyle}
+              />
+            </div>
+
+            {/* Stop Loss */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <label style={{ ...labelStyle, color: 'var(--red)' }}>Stop Loss (pips)</label>
+              <input
+                type="number"
+                name="sl"
+                value={formData.sl}
+                onChange={handleInputChange}
+                step="1"
+                min="0"
+                placeholder="Ej: 30"
+                style={inputStyle}
+              />
+            </div>
+          </div>
+
+          {/* Risk Calculator (only shows if SL is set) */}
+          {formData.sl && (
+            <div style={{
+              padding: '16px',
+              backgroundColor: 'var(--bg-surface)',
+              borderRadius: 'var(--radius-lg)',
+              border: '1px solid var(--border-color)',
+            }}>
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                marginBottom: '12px',
+              }}>
+                <span style={{ fontSize: '14px' }}>📊</span>
+                <span style={{
+                  fontSize: '10px',
+                  fontWeight: '700',
+                  color: 'var(--text-muted)',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.05em'
+                }}>
+                  Calculadora de Riesgo
+                </span>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                <div>
+                  <span style={{ fontSize: '10px', color: 'var(--text-muted)', display: 'block' }}>
+                    Pérdida Proyectada
+                  </span>
+                  <span style={{
+                    fontSize: '18px',
+                    fontWeight: '700',
+                    fontFamily: 'var(--font-mono)',
+                    color: 'var(--red)'
+                  }}>
+                    -${risk?.loss || '0.00'}
+                  </span>
                 </div>
-                <div style={{ fontSize: '13px', color: '#78350f' }}>
-                  Estás a punto de abrir una posición <strong>{formData.order_type}</strong> en{' '}
-                  <strong>{formData.symbol}</strong> con <strong>{formData.lot}</strong> lotes.
+                <div>
+                  <span style={{ fontSize: '10px', color: 'var(--text-muted)', display: 'block' }}>
+                    Riesgo de Cuenta
+                  </span>
+                  <span style={{
+                    fontSize: '18px',
+                    fontWeight: '700',
+                    fontFamily: 'var(--font-mono)',
+                    color: 'var(--text-primary)'
+                  }}>
+                    {risk?.percent || '0.00'}%
+                  </span>
                 </div>
               </div>
-              <div style={{ display: 'flex', gap: '12px' }}>
-                <button
-                  type="button"
-                  onClick={() => setShowConfirm(false)}
-                  disabled={loading}
-                  style={{
-                    flex: 1,
-                    padding: '12px',
-                    backgroundColor: '#f3f4f6',
-                    color: '#374151',
-                    border: 'none',
-                    borderRadius: '6px',
-                    fontSize: '14px',
-                    fontWeight: '600',
-                    cursor: loading ? 'not-allowed' : 'pointer',
-                  }}
-                >
-                  Volver
-                </button>
-                <button
-                  type="button"
-                  onClick={handleConfirmTrade}
-                  disabled={loading}
-                  style={{
-                    flex: 1,
-                    padding: '12px',
-                    backgroundColor: '#dc2626',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '6px',
-                    fontSize: '14px',
-                    fontWeight: '600',
-                    cursor: loading ? 'not-allowed' : 'pointer',
-                    opacity: loading ? 0.6 : 1,
-                  }}
-                >
-                  {loading ? 'Confirmando...' : 'Confirmar Operación'}
-                </button>
-              </div>
+
+              {risk && (
+                <div style={{
+                  marginTop: '12px',
+                  height: '6px',
+                  backgroundColor: 'var(--bg-dark)',
+                  borderRadius: '3px',
+                  overflow: 'hidden',
+                }}>
+                  <div style={{
+                    width: `${Math.min(parseFloat(risk.percent) * 10, 100)}%`,
+                    height: '100%',
+                    backgroundColor: parseFloat(risk.percent) > 5 ? 'var(--red)' : 'var(--orange)',
+                    borderRadius: '3px',
+                    transition: 'width 0.3s ease',
+                  }} />
+                </div>
+              )}
             </div>
           )}
-        </form>
+
+          {/* Account Info */}
+          <div style={{
+            padding: '12px',
+            backgroundColor: 'var(--bg-surface)',
+            borderRadius: 'var(--radius)',
+            border: '1px solid var(--border-subtle)',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+          }}>
+            <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+              Cuenta
+            </span>
+            <span style={{ fontSize: '13px', color: 'var(--text-primary)', fontWeight: '500' }}>
+              #{account.account_number}
+            </span>
+          </div>
+        </div>
+
+        {/* Action Buttons - Buy/Sell */}
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: '1fr 1fr',
+          gap: '16px',
+          padding: '20px',
+          backgroundColor: 'var(--bg-surface)',
+          borderTop: '1px solid var(--border-color)',
+        }}>
+          {/* Buy Button */}
+          <button
+            onClick={() => handleExecuteTrade('BUY')}
+            disabled={loading}
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '4px',
+              padding: '16px',
+              backgroundColor: '#238636',
+              color: 'white',
+              border: '1px solid rgba(255,255,255,0.1)',
+              borderRadius: 'var(--radius-lg)',
+              cursor: loading ? 'not-allowed' : 'pointer',
+              opacity: loading ? 0.7 : 1,
+              transition: 'all 0.2s',
+              boxShadow: '0 4px 12px rgba(35, 134, 54, 0.3)',
+            }}
+          >
+            <span style={{
+              fontSize: '10px',
+              fontWeight: '700',
+              textTransform: 'uppercase',
+              letterSpacing: '0.1em',
+              opacity: 0.8
+            }}>
+              Buy / Long
+            </span>
+            <span style={{
+              fontSize: '18px',
+              fontWeight: '700',
+              fontFamily: 'var(--font-mono)'
+            }}>
+              {loading ? '...' : 'COMPRAR'}
+            </span>
+          </button>
+
+          {/* Sell Button */}
+          <button
+            onClick={() => handleExecuteTrade('SELL')}
+            disabled={loading}
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '4px',
+              padding: '16px',
+              backgroundColor: '#da3633',
+              color: 'white',
+              border: '1px solid rgba(255,255,255,0.1)',
+              borderRadius: 'var(--radius-lg)',
+              cursor: loading ? 'not-allowed' : 'pointer',
+              opacity: loading ? 0.7 : 1,
+              transition: 'all 0.2s',
+              boxShadow: '0 4px 12px rgba(218, 54, 51, 0.3)',
+            }}
+          >
+            <span style={{
+              fontSize: '10px',
+              fontWeight: '700',
+              textTransform: 'uppercase',
+              letterSpacing: '0.1em',
+              opacity: 0.8
+            }}>
+              Sell / Short
+            </span>
+            <span style={{
+              fontSize: '18px',
+              fontWeight: '700',
+              fontFamily: 'var(--font-mono)'
+            }}>
+              {loading ? '...' : 'VENDER'}
+            </span>
+          </button>
+        </div>
       </div>
     </div>
   );
+};
+
+// Styles
+const labelStyle = {
+  fontSize: '10px',
+  fontWeight: '700',
+  color: 'var(--text-muted)',
+  textTransform: 'uppercase',
+  letterSpacing: '0.05em',
+};
+
+const inputStyle = {
+  width: '100%',
+  padding: '10px 12px',
+  backgroundColor: 'var(--bg-surface)',
+  border: '1px solid var(--border-color)',
+  borderRadius: 'var(--radius)',
+  fontSize: '13px',
+  color: 'var(--text-primary)',
+  fontFamily: 'var(--font-mono)',
+  boxSizing: 'border-box',
+  outline: 'none',
+  transition: 'border-color 0.2s',
+};
+
+const lotBtnStyle = {
+  padding: '10px 14px',
+  backgroundColor: 'var(--bg-surface)',
+  border: '1px solid var(--border-color)',
+  borderRadius: 'var(--radius) 0 0 var(--radius)',
+  color: 'var(--text-muted)',
+  fontSize: '16px',
+  cursor: 'pointer',
+  transition: 'all 0.2s',
 };
 
 export default TradeModal;

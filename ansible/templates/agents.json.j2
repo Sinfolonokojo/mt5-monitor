@@ -1,0 +1,16 @@
+{
+  "agents": [
+{% for agent in agents %}
+    {
+      "name": "{{ agent.name }}",
+      "port": {{ agent.port }},
+      "terminal_path": "{{ agent.terminal_path }}",
+      "display_name": "{{ agent.display_name }}",
+      "account_holder": "{{ agent.account_holder }}",
+      "prop_firm": "{{ agent.prop_firm }}",
+      "initial_balance": {{ agent.initial_balance }}
+    }{% if not loop.last %},{% endif %}
+
+{% endfor %}
+  ]
+}

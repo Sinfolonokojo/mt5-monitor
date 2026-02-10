@@ -1,0 +1,43 @@
+---
+# Start agents on VPS
+# Usage: ansible-playbook playbooks/start.yml -i inventory/hosts.yml
+# Usage: ansible-playbook playbooks/start.yml -i inventory/hosts.yml --limit vps02
+
+- name: Start VPS Agents
+  hosts: all_vps
+  gather_facts: no
+  tasks:
+    - name: Get Python path
+      win_shell: (Get-Command python).Source
+      register: python_path
+
+    - name: Create scheduled task for launcher
+      win_shell: >-
+        Unregister-ScheduledTask -TaskName "VPSAgentLauncher" -Confirm:$false -ErrorAction SilentlyContinue;
+        $action = New-ScheduledTaskAction -Execute "{{ python_path.stdout | trim }}" -Argument "launcher.py" -WorkingDirectory "{{ vps_agent_path }}";
+        $principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest;
+        $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -ExecutionTimeLimit (New-TimeSpan -Days 365);
+        Register-ScheduledTask -TaskName "VPSAgentLauncher" -Action $action -Principal $principal -Settings $settings -Force
+      register: task_created
+
+    - name: Start the scheduled task
+      win_shell: |
+        Start-ScheduledTask -TaskName "VPSAgentLauncher"
+
+    - name: Wait for startup
+      pause:
+        seconds: 12
+
+    - name: Verify running
+      win_uri:
+        url: "http://localhost:{{ item }}/health"
+        method: GET
+        status_code: 200
+        timeout: 5
+      loop: "{{ agent_ports }}"
+      register: health_checks
+      ignore_errors: yes
+
+    - name: Start result
+      debug:
+        msg: "{{ inventory_hostname }}: Started. Health checks completed."
