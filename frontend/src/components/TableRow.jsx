@@ -21,6 +21,7 @@ const TableRow = ({ account, editMode, onPhaseUpdate, onVSUpdate, vsGroup, onRow
     'var(--yellow)';
 
   const handleRowClick = (e) => {
+    if (editMode) return;
     if (e.target.tagName === 'SELECT' || e.target.tagName === 'INPUT' || e.target.closest('.editable-element')) {
       return;
     }

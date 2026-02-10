@@ -194,7 +194,7 @@ function App() {
       {/* Main Content */}
       <div className="app-main-wrapper">
         {/* Desktop Top Stats Bar */}
-        <div className="top-stats-bar">
+        <div className="top-stats-bar" style={activeTab === 'versus' ? { display: 'none' } : {}}>
           <div className="stat-card">
             <div className="stat-card-header">
               <span className="stat-card-label">Total Cuentas</span>
@@ -234,7 +234,7 @@ function App() {
         </div>
 
         {/* Mobile Stat Cards */}
-        <div className="mobile-stat-cards">
+        <div className="mobile-stat-cards" style={activeTab === 'versus' ? { display: 'none' } : {}}>
           <div className="stat-card">
             <div className="stat-card-header">
               <span className="stat-card-label">Total</span>

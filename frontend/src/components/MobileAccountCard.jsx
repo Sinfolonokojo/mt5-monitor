@@ -29,6 +29,7 @@ const MobileAccountCard = ({ account, editMode, onPhaseUpdate, onVSUpdate, vsGro
   const isConnected = account.status === 'connected';
 
   const handleCardClick = (e) => {
+    if (editMode) return;
     if (e.target.tagName === 'SELECT' || e.target.tagName === 'INPUT' || e.target.closest('.editable-element')) {
       return;
     }

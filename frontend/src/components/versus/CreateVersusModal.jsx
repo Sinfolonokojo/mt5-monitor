@@ -1,4 +1,139 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
+
+const SearchableAccountSelect = ({ accounts, value, onChange, name, placeholder = 'Buscar cuenta...' }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const containerRef = useRef(null);
+  const inputRef = useRef(null);
+
+  const selectedAccount = accounts.find(a => a.account_number === parseInt(value));
+
+  const filtered = accounts.filter(acc => {
+    if (!acc.account_number) return false;
+    if (!search) return true;
+    const q = search.toLowerCase();
+    return (
+      String(acc.account_number).includes(q) ||
+      (acc.account_holder || '').toLowerCase().includes(q) ||
+      (acc.prop_firm || '').toLowerCase().includes(q)
+    );
+  });
+
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (containerRef.current && !containerRef.current.contains(e.target)) {
+        setIsOpen(false);
+        setSearch('');
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  useEffect(() => {
+    if (isOpen && inputRef.current) inputRef.current.focus();
+  }, [isOpen]);
+
+  const handleSelect = (acc) => {
+    onChange({ target: { name, value: String(acc.account_number) } });
+    setIsOpen(false);
+    setSearch('');
+  };
+
+  return (
+    <div ref={containerRef} style={{ position: 'relative' }}>
+      <div
+        onClick={() => setIsOpen(!isOpen)}
+        style={{
+          ...selectStyle,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          cursor: 'pointer',
+          minHeight: '40px',
+        }}
+      >
+        <span style={{ color: selectedAccount ? 'var(--text-primary)' : 'var(--text-muted)', fontSize: '13px' }}>
+          {selectedAccount
+            ? `${selectedAccount.account_holder} - ${selectedAccount.prop_firm} #${selectedAccount.account_number}`
+            : 'Elegir cuenta...'}
+        </span>
+        <span style={{ color: 'var(--text-muted)', fontSize: '10px', transform: isOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>
+          ▼
+        </span>
+      </div>
+
+      {isOpen && (
+        <div style={{
+          position: 'absolute',
+          top: '100%',
+          left: 0,
+          right: 0,
+          zIndex: 50,
+          backgroundColor: 'var(--bg-surface)',
+          border: '1px solid var(--border-color)',
+          borderRadius: '8px',
+          marginTop: '4px',
+          boxShadow: '0 10px 25px rgba(0,0,0,0.4)',
+          overflow: 'hidden',
+        }}>
+          <div style={{ padding: '8px', borderBottom: '1px solid var(--border-color)' }}>
+            <input
+              ref={inputRef}
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder={placeholder}
+              style={{
+                width: '100%',
+                padding: '8px 10px',
+                backgroundColor: 'var(--bg-dark)',
+                border: '1px solid var(--border-color)',
+                borderRadius: '6px',
+                fontSize: '13px',
+                color: 'var(--text-primary)',
+                outline: 'none',
+                boxSizing: 'border-box',
+              }}
+            />
+          </div>
+          <div style={{ maxHeight: '200px', overflowY: 'auto' }}>
+            {filtered.length === 0 ? (
+              <div style={{ padding: '12px 16px', color: 'var(--text-muted)', fontSize: '12px', textAlign: 'center' }}>
+                Sin resultados
+              </div>
+            ) : (
+              filtered.map(acc => (
+                <div
+                  key={acc.account_number}
+                  onClick={() => handleSelect(acc)}
+                  style={{
+                    padding: '8px 16px',
+                    cursor: 'pointer',
+                    fontSize: '13px',
+                    color: parseInt(value) === acc.account_number ? 'var(--primary)' : 'var(--text-primary)',
+                    backgroundColor: parseInt(value) === acc.account_number ? 'rgba(19, 91, 236, 0.1)' : 'transparent',
+                    transition: 'background-color 0.1s',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = parseInt(value) === acc.account_number ? 'rgba(19, 91, 236, 0.15)' : 'var(--bg-surface-hover)'}
+                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = parseInt(value) === acc.account_number ? 'rgba(19, 91, 236, 0.1)' : 'transparent'}
+                >
+                  <span>{acc.account_holder} - <strong>{acc.prop_firm}</strong></span>
+                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--text-muted)' }}>
+                    #{acc.account_number}
+                  </span>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
 
 const CreateVersusModal = ({ accounts, onClose, onCreate }) => {
   const initialFormData = {
@@ -230,20 +365,12 @@ const CreateVersusModal = ({ accounts, onClose, onCreate }) => {
               </div>
               <div style={{ marginBottom: '16px' }}>
                 <label style={labelStyle}>Seleccionar Cuenta *</label>
-                <select
-                  name="account_a"
+                <SearchableAccountSelect
+                  accounts={accounts}
                   value={formData.account_a}
                   onChange={handleInputChange}
-                  required
-                  style={selectStyle}
-                >
-                  <option value="">Elegir cuenta...</option>
-                  {accounts.map(acc => (
-                    <option key={acc.account_number} value={acc.account_number}>
-                      {acc.account_holder} - {acc.prop_firm} #{acc.account_number}
-                    </option>
-                  ))}
-                </select>
+                  name="account_a"
+                />
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                 <div>
@@ -309,20 +436,12 @@ const CreateVersusModal = ({ accounts, onClose, onCreate }) => {
               </div>
               <div style={{ marginBottom: '16px' }}>
                 <label style={labelStyle}>Seleccionar Cuenta *</label>
-                <select
-                  name="account_b"
+                <SearchableAccountSelect
+                  accounts={accounts}
                   value={formData.account_b}
                   onChange={handleInputChange}
-                  required
-                  style={selectStyle}
-                >
-                  <option value="">Elegir cuenta...</option>
-                  {accounts.map(acc => (
-                    <option key={acc.account_number} value={acc.account_number}>
-                      {acc.account_holder} - {acc.prop_firm} #{acc.account_number}
-                    </option>
-                  ))}
-                </select>
+                  name="account_b"
+                />
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                 <div>
