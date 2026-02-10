@@ -3,6 +3,7 @@ from typing import Optional
 from datetime import datetime, timedelta
 import logging
 import time
+import threading
 from .models import (
     AccountInfo, AccountResponse, TradeHistory, TradeHistoryResponse,
     OpenPositionRequest, OpenPositionResponse, ClosePositionRequest,
@@ -11,6 +12,9 @@ from .models import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Global lock to serialize all MT5 API calls (MT5 library is not thread-safe)
+_mt5_lock = threading.Lock()
 
 
 class MT5Service:
@@ -231,6 +235,11 @@ class MT5Service:
 
     def get_account_data(self) -> AccountResponse:
         """Get data for the single account in this terminal"""
+        with _mt5_lock:
+            return self._get_account_data_unlocked()
+
+    def _get_account_data_unlocked(self) -> AccountResponse:
+        """Internal: get account data while holding the MT5 lock."""
         if not self.initialized:
             self.initialize()
 
@@ -268,8 +277,13 @@ class MT5Service:
             )
 
     def get_trade_history(self, from_date: Optional[datetime] = None, days: Optional[int] = None) -> Optional[TradeHistoryResponse]:
+        """Get detailed trade history (thread-safe)."""
+        with _mt5_lock:
+            return self._get_trade_history_unlocked(from_date, days)
+
+    def _get_trade_history_unlocked(self, from_date: Optional[datetime] = None, days: Optional[int] = None) -> Optional[TradeHistoryResponse]:
         """
-        Get detailed trade history (closed trades only)
+        Internal: get trade history while holding the MT5 lock.
 
         Args:
             from_date: Start date for fetching trades (optional, for incremental fetching)
@@ -471,8 +485,13 @@ class MT5Service:
             return False, f"Error validating symbol: {str(e)}"
 
     def open_position(self, request: OpenPositionRequest) -> OpenPositionResponse:
+        """Open a new market position (thread-safe)."""
+        with _mt5_lock:
+            return self._open_position_unlocked(request)
+
+    def _open_position_unlocked(self, request: OpenPositionRequest) -> OpenPositionResponse:
         """
-        Open a new market position
+        Internal: open a new market position
 
         Args:
             request: OpenPositionRequest with trade parameters
@@ -652,8 +671,13 @@ class MT5Service:
             )
 
     def close_position(self, request: ClosePositionRequest) -> ClosePositionResponse:
+        """Close an existing position (thread-safe)."""
+        with _mt5_lock:
+            return self._close_position_unlocked(request)
+
+    def _close_position_unlocked(self, request: ClosePositionRequest) -> ClosePositionResponse:
         """
-        Close an existing position
+        Internal: close an existing position
 
         Args:
             request: ClosePositionRequest with ticket number
@@ -760,8 +784,13 @@ class MT5Service:
             )
 
     def modify_position(self, request: ModifyPositionRequest) -> ModifyPositionResponse:
+        """Modify SL/TP on an existing position (thread-safe)."""
+        with _mt5_lock:
+            return self._modify_position_unlocked(request)
+
+    def _modify_position_unlocked(self, request: ModifyPositionRequest) -> ModifyPositionResponse:
         """
-        Modify SL/TP on an existing position
+        Internal: modify SL/TP on an existing position
 
         Args:
             request: ModifyPositionRequest with ticket and new SL/TP
@@ -840,48 +869,51 @@ class MT5Service:
             )
 
     def get_open_positions(self) -> OpenPositionsResponse:
-        """
-        Get all open positions for this account
+        """Get all open positions for this account (thread-safe)."""
+        with _mt5_lock:
+            return self._get_open_positions_unlocked()
 
-        Returns:
-            OpenPositionsResponse with list of positions
-        """
+    def _get_open_positions_unlocked(self) -> OpenPositionsResponse:
+        """Internal: get open positions while holding the MT5 lock."""
+        empty = OpenPositionsResponse(account_number=0, positions=[], total_profit=0.0, position_count=0)
+
         try:
             if not self.initialized:
                 self.initialize()
 
+            # Get account info first (same pattern as get_account_data which works reliably)
             account_info = self.get_account_info()
             if not account_info:
-                logger.error(f"get_open_positions: Failed to get account info for {self.display_name} - returning empty positions")
-                return OpenPositionsResponse(
-                    account_number=0,
-                    positions=[],
-                    total_profit=0.0,
-                    position_count=0
-                )
+                logger.error(f"get_open_positions: account not connected for {self.display_name}")
+                return empty
 
-            # Get all positions
+            account_number = account_info.account_number
+
+            # Get positions — same simple call as has_open_positions() which works fine
             positions = mt5.positions_get()
+
             if positions is None:
                 error = mt5.last_error()
-                logger.warning(f"get_open_positions: mt5.positions_get() returned None for {self.display_name} (account {account_info.account_number}), error: {error}")
-                return OpenPositionsResponse(
-                    account_number=account_info.account_number,
-                    positions=[],
-                    total_profit=0.0,
-                    position_count=0
-                )
+                logger.warning(f"get_open_positions: positions_get() returned None for {self.display_name}, error: {error}")
+                # Simple retry with small delay, no destructive shutdown/reinit
+                time.sleep(0.5)
+                positions = mt5.positions_get()
 
-            logger.info(f"get_open_positions: {self.display_name} (account {account_info.account_number}) has {len(positions)} positions")
+            if positions is None:
+                logger.error(f"get_open_positions: Still no positions after retry for {self.display_name}")
+                return OpenPositionsResponse(account_number=account_number, positions=[], total_profit=0.0, position_count=0)
 
-            # Convert to OpenPosition objects
+            logger.info(f"get_open_positions: {self.display_name} (account {account_number}) has {len(positions)} positions")
+
             open_positions = []
             total_profit = 0.0
 
             for pos in positions:
-                # Get current price
                 tick = mt5.symbol_info_tick(pos.symbol)
-                current_price = tick.bid if pos.type == mt5.POSITION_TYPE_BUY else tick.ask if tick else pos.price_current
+                if tick:
+                    current_price = tick.bid if pos.type == mt5.POSITION_TYPE_BUY else tick.ask
+                else:
+                    current_price = getattr(pos, 'price_current', pos.price_open)
 
                 position_type = "BUY" if pos.type == mt5.POSITION_TYPE_BUY else "SELL"
 
@@ -895,8 +927,8 @@ class MT5Service:
                     sl=pos.sl if pos.sl > 0 else None,
                     tp=pos.tp if pos.tp > 0 else None,
                     profit=pos.profit,
-                    swap=pos.swap,
-                    commission=pos.commission,
+                    swap=getattr(pos, 'swap', 0.0),
+                    commission=getattr(pos, 'commission', 0.0),
                     open_time=datetime.fromtimestamp(pos.time)
                 )
 
@@ -904,20 +936,15 @@ class MT5Service:
                 total_profit += pos.profit
 
             return OpenPositionsResponse(
-                account_number=account_info.account_number,
+                account_number=account_number,
                 positions=open_positions,
                 total_profit=round(total_profit, 2),
                 position_count=len(open_positions)
             )
 
         except Exception as e:
-            logger.error(f"Error getting open positions: {str(e)}")
-            return OpenPositionsResponse(
-                account_number=0,
-                positions=[],
-                total_profit=0.0,
-                position_count=0
-            )
+            logger.error(f"Error getting open positions for {self.display_name}: {str(e)}")
+            return empty
 
     def get_quote(self, symbol: str) -> Optional[dict]:
         """

@@ -1,8 +1,4 @@
-import { useState } from 'react';
-
-const VersusCard = ({ versus, accounts = [], onCongelar, onTransferir, onCancel, onDelete, loading }) => {
-  const [showConfirm, setShowConfirm] = useState(null);
-
+const VersusCard = ({ versus, accounts = [], onClick }) => {
   const getAccountInfo = (accountNumber) => {
     const acc = accounts.find(a => a.account_number === accountNumber);
     if (!acc) return null;
@@ -13,67 +9,54 @@ const VersusCard = ({ versus, accounts = [], onCongelar, onTransferir, onCancel,
   const accountInfoB = getAccountInfo(versus.account_b);
 
   const statusConfig = {
-    pending: { bg: 'rgba(251, 191, 36, 0.15)', text: '#fbbf24', label: 'Pendiente' },
-    congelado: { bg: 'rgba(59, 130, 246, 0.15)', text: '#3b82f6', label: 'Congelado' },
-    transferido: { bg: 'rgba(16, 185, 129, 0.15)', text: '#10b981', label: 'Transferido' },
-    completed: { bg: 'rgba(107, 114, 128, 0.15)', text: '#6b7280', label: 'Completado' },
-    error: { bg: 'rgba(239, 68, 68, 0.15)', text: '#ef4444', label: 'Error' }
+    pending: { bg: 'rgba(251, 191, 36, 0.15)', text: '#fbbf24', label: 'Pendiente', dot: true },
+    congelado: { bg: 'rgba(59, 130, 246, 0.15)', text: '#3b82f6', label: 'Congelado', dot: true },
+    transferido: { bg: 'rgba(16, 185, 129, 0.15)', text: '#10b981', label: 'Transferido', dot: false },
+    completed: { bg: 'rgba(107, 114, 128, 0.15)', text: '#6b7280', label: 'Completado', dot: false },
+    error: { bg: 'rgba(239, 68, 68, 0.15)', text: '#ef4444', label: 'Error', dot: false }
   };
 
   const status = statusConfig[versus.status] || statusConfig.pending;
-
-  const handleAction = async (action) => {
-    setShowConfirm(null);
-    try {
-      if (action === 'congelar') {
-        await onCongelar(versus.id);
-      } else if (action === 'transferir') {
-        await onTransferir(versus.id);
-      } else if (action === 'cancel') {
-        await onCancel(versus.id);
-      } else if (action === 'delete') {
-        await onDelete(versus.id);
-      }
-    } catch (error) {
-      // Error is handled by parent
-    }
-  };
-
-  const formatDate = (dateString) => {
-    if (!dateString) return '-';
-    return new Date(dateString).toLocaleString('es-ES', {
-      month: 'short',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-  };
+  const isInactive = versus.status === 'completed' || versus.status === 'transferido';
 
   return (
-    <div style={{
-      backgroundColor: 'var(--bg-surface)',
-      borderRadius: '12px',
-      border: '1px solid var(--border-color)',
-      overflow: 'hidden',
-    }}>
+    <div
+      className="versus-card-glow"
+      onClick={() => onClick && onClick(versus)}
+      style={{
+        backgroundColor: 'var(--bg-surface)',
+        borderRadius: '12px',
+        border: '1px solid var(--border-color)',
+        overflow: 'hidden',
+        cursor: 'pointer',
+        opacity: isInactive ? 0.7 : 1,
+        transition: 'all 0.2s ease',
+      }}
+    >
       {/* Header */}
       <div style={{
-        padding: '16px 20px',
+        padding: '14px 18px',
         borderBottom: '1px solid var(--border-color)',
         display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'center',
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <span style={{
-            fontSize: '16px',
-            fontWeight: '600',
-            color: 'var(--text-primary)',
+            padding: '4px 10px',
+            borderRadius: '6px',
+            fontSize: '12px',
+            fontWeight: '700',
+            color: 'var(--primary)',
+            backgroundColor: 'rgba(19, 91, 236, 0.1)',
             fontFamily: 'var(--font-mono)',
           }}>
             VS-{versus.id}
           </span>
           <span style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
             padding: '4px 10px',
             borderRadius: '9999px',
             fontSize: '11px',
@@ -83,80 +66,67 @@ const VersusCard = ({ versus, accounts = [], onCongelar, onTransferir, onCancel,
             textTransform: 'uppercase',
             letterSpacing: '0.02em',
           }}>
+            {status.dot && (
+              <span style={{
+                width: '6px',
+                height: '6px',
+                borderRadius: '50%',
+                backgroundColor: status.text,
+                animation: 'pulse 2s ease-in-out infinite',
+              }} />
+            )}
             {status.label}
           </span>
         </div>
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '8px',
-          padding: '6px 12px',
-          borderRadius: '6px',
-          backgroundColor: versus.side === 'BUY' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
-          color: versus.side === 'BUY' ? 'var(--green)' : 'var(--red)',
-          fontSize: '13px',
-          fontWeight: '600',
-          fontFamily: 'var(--font-mono)',
-        }}>
-          {versus.side} {versus.lots}L
-        </div>
       </div>
 
-      {/* Account Comparison */}
+      {/* Body - 3 column grid */}
       <div style={{
         display: 'grid',
         gridTemplateColumns: '1fr auto 1fr',
         alignItems: 'center',
-        padding: '20px',
+        padding: '20px 18px',
+        gap: '0',
       }}>
         {/* Account A */}
-        <div style={{ textAlign: 'center' }}>
-          <div style={{
-            fontSize: '11px',
-            fontWeight: '500',
-            color: 'var(--text-muted)',
-            textTransform: 'uppercase',
-            letterSpacing: '0.05em',
-            marginBottom: '8px',
-          }}>
-            Cuenta A
-          </div>
-          {accountInfoA && (
-            <div style={{
-              fontSize: '11px',
-              color: 'var(--text-secondary)',
-              marginBottom: '4px',
-              lineHeight: '1.4',
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          {accountInfoA?.firm && (
+            <span style={{
+              display: 'inline-block',
+              width: 'fit-content',
+              padding: '2px 8px',
+              borderRadius: '4px',
+              fontSize: '10px',
+              fontWeight: '600',
+              backgroundColor: 'rgba(139, 92, 246, 0.15)',
+              color: '#a78bfa',
+              textTransform: 'uppercase',
+              letterSpacing: '0.03em',
             }}>
-              {accountInfoA.holder} - {accountInfoA.firm}
-            </div>
+              {accountInfoA.firm}
+            </span>
           )}
-          <div style={{
-            fontSize: '18px',
+          <span style={{
+            fontSize: '13px',
+            color: 'var(--text-secondary)',
+            fontWeight: '500',
+          }}>
+            {accountInfoA?.holder || 'Cuenta A'}
+          </span>
+          <span style={{
+            display: 'inline-block',
+            width: 'fit-content',
+            padding: '4px 10px',
+            borderRadius: '6px',
+            fontSize: '14px',
             fontWeight: '600',
             color: 'var(--text-primary)',
             fontFamily: 'var(--font-mono)',
-            marginBottom: '4px',
+            backgroundColor: 'var(--bg-dark)',
+            border: '1px solid var(--border-color)',
           }}>
             #{versus.account_a}
-          </div>
-          <div style={{
-            fontSize: '12px',
-            color: versus.side === 'BUY' ? 'var(--green)' : 'var(--red)',
-            fontWeight: '500',
-          }}>
-            {versus.side}
-          </div>
-          {versus.tickets_a?.length > 0 && (
-            <div style={{
-              marginTop: '8px',
-              fontSize: '11px',
-              color: 'var(--text-muted)',
-              fontFamily: 'var(--font-mono)',
-            }}>
-              Tickets: {versus.tickets_a.join(', ')}
-            </div>
-          )}
+          </span>
         </div>
 
         {/* VS Divider */}
@@ -164,246 +134,134 @@ const VersusCard = ({ versus, accounts = [], onCongelar, onTransferir, onCancel,
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
-          padding: '0 24px',
+          padding: '0 16px',
+          gap: '0',
         }}>
           <div style={{
-            width: '40px',
-            height: '40px',
+            width: '1px',
+            height: '20px',
+            backgroundColor: 'var(--border-color)',
+          }} />
+          <div style={{
+            width: '36px',
+            height: '36px',
             borderRadius: '50%',
             backgroundColor: 'var(--bg-header)',
             border: '2px solid var(--border-color)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            fontSize: '12px',
+            fontSize: '11px',
             fontWeight: '700',
             color: 'var(--primary)',
           }}>
             VS
           </div>
           <div style={{
-            marginTop: '8px',
-            padding: '4px 8px',
-            backgroundColor: 'var(--bg-header)',
-            borderRadius: '4px',
-            fontSize: '11px',
-            fontWeight: '500',
-            color: 'var(--text-secondary)',
-            fontFamily: 'var(--font-mono)',
-          }}>
-            {versus.symbol}
-          </div>
+            width: '1px',
+            height: '20px',
+            backgroundColor: 'var(--border-color)',
+          }} />
         </div>
 
         {/* Account B */}
-        <div style={{ textAlign: 'center' }}>
-          <div style={{
-            fontSize: '11px',
-            fontWeight: '500',
-            color: 'var(--text-muted)',
-            textTransform: 'uppercase',
-            letterSpacing: '0.05em',
-            marginBottom: '8px',
-          }}>
-            Cuenta B
-          </div>
-          {accountInfoB && (
-            <div style={{
-              fontSize: '11px',
-              color: 'var(--text-secondary)',
-              marginBottom: '4px',
-              lineHeight: '1.4',
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', alignItems: 'flex-end' }}>
+          {accountInfoB?.firm && (
+            <span style={{
+              display: 'inline-block',
+              width: 'fit-content',
+              padding: '2px 8px',
+              borderRadius: '4px',
+              fontSize: '10px',
+              fontWeight: '600',
+              backgroundColor: 'rgba(236, 72, 153, 0.15)',
+              color: '#f472b6',
+              textTransform: 'uppercase',
+              letterSpacing: '0.03em',
             }}>
-              {accountInfoB.holder} - {accountInfoB.firm}
-            </div>
+              {accountInfoB.firm}
+            </span>
           )}
-          <div style={{
-            fontSize: '18px',
+          <span style={{
+            fontSize: '13px',
+            color: 'var(--text-secondary)',
+            fontWeight: '500',
+          }}>
+            {accountInfoB?.holder || 'Cuenta B'}
+          </span>
+          <span style={{
+            display: 'inline-block',
+            width: 'fit-content',
+            padding: '4px 10px',
+            borderRadius: '6px',
+            fontSize: '14px',
             fontWeight: '600',
             color: 'var(--text-primary)',
             fontFamily: 'var(--font-mono)',
-            marginBottom: '4px',
+            backgroundColor: 'var(--bg-dark)',
+            border: '1px solid var(--border-color)',
           }}>
             #{versus.account_b}
-          </div>
-          <div style={{
-            fontSize: '12px',
-            color: versus.side === 'BUY' ? 'var(--red)' : 'var(--green)',
-            fontWeight: '500',
-          }}>
-            {versus.side === 'BUY' ? 'SELL' : 'BUY'}
-          </div>
-          {versus.tickets_b?.length > 0 && (
-            <div style={{
-              marginTop: '8px',
-              fontSize: '11px',
-              color: 'var(--text-muted)',
-              fontFamily: 'var(--font-mono)',
-            }}>
-              Tickets: {versus.tickets_b.join(', ')}
-            </div>
-          )}
+          </span>
         </div>
       </div>
 
-      {/* Info Bar */}
+      {/* Footer */}
       <div style={{
-        padding: '12px 20px',
+        padding: '12px 18px',
         backgroundColor: 'var(--bg-header)',
         borderTop: '1px solid var(--border-color)',
         display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'center',
-        fontSize: '12px',
-        color: 'var(--text-muted)',
       }}>
-        <span>Creado: {formatDate(versus.created_at)}</span>
-        {versus.scheduled_congelar && versus.status === 'pending' && (
-          <span style={{ color: 'var(--primary)' }}>
-            Congelar: {formatDate(versus.scheduled_congelar)}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <span style={{
+            padding: '4px 10px',
+            borderRadius: '4px',
+            fontSize: '12px',
+            fontWeight: '600',
+            color: 'var(--text-primary)',
+            backgroundColor: 'var(--bg-dark)',
+            fontFamily: 'var(--font-mono)',
+            border: '1px solid var(--border-color)',
+          }}>
+            {versus.symbol}
           </span>
-        )}
-        {versus.scheduled_transferir && (versus.status === 'pending' || versus.status === 'congelado') && (
-          <span style={{ color: '#10b981' }}>
-            Transferir: {formatDate(versus.scheduled_transferir)}
+          <span style={{
+            fontSize: '12px',
+            fontWeight: '600',
+            fontFamily: 'var(--font-mono)',
+            color: versus.side === 'BUY' ? 'var(--green)' : 'var(--red)',
+          }}>
+            {versus.side} {versus.lots}L
           </span>
-        )}
+        </div>
+        <span style={{
+          fontSize: '16px',
+          color: 'var(--text-muted)',
+          transition: 'transform 0.2s',
+        }}>
+          ›
+        </span>
       </div>
 
-      {/* Error Message */}
+      {/* Error indicator */}
       {versus.error_message && (
         <div style={{
-          padding: '12px 20px',
+          padding: '8px 18px',
           backgroundColor: 'rgba(239, 68, 68, 0.1)',
           borderTop: '1px solid rgba(239, 68, 68, 0.2)',
+          fontSize: '12px',
+          color: 'var(--red)',
+          fontWeight: '500',
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
         }}>
-          <div style={{ fontSize: '11px', color: 'var(--red)', fontWeight: '600', marginBottom: '4px' }}>
-            Error
-          </div>
-          <div style={{ fontSize: '13px', color: 'var(--red)', opacity: 0.9 }}>
-            {versus.error_message}
-          </div>
+          Error: {versus.error_message}
         </div>
       )}
-
-      {/* Actions */}
-      <div style={{
-        padding: '16px 20px',
-        borderTop: '1px solid var(--border-color)',
-      }}>
-        {showConfirm ? (
-          <div style={{
-            padding: '16px',
-            backgroundColor: 'rgba(251, 191, 36, 0.1)',
-            borderRadius: '8px',
-            border: '1px solid rgba(251, 191, 36, 0.3)',
-          }}>
-            <div style={{
-              fontSize: '14px',
-              fontWeight: '600',
-              color: '#fbbf24',
-              marginBottom: '8px',
-            }}>
-              Confirmar {showConfirm === 'congelar' ? 'Congelar' : showConfirm === 'transferir' ? 'Transferir' : showConfirm === 'delete' ? 'Eliminar' : 'Cancelar'}
-            </div>
-            <div style={{
-              fontSize: '13px',
-              color: 'var(--text-secondary)',
-              marginBottom: '12px',
-              lineHeight: '1.5',
-            }}>
-              {showConfirm === 'congelar' && 'Esto abrirá 2 posiciones opuestas en la Cuenta A (BUY y SELL)'}
-              {showConfirm === 'transferir' && 'Esto cerrará la posición opuesta en la Cuenta A y abrirá 2 posiciones en la Cuenta B'}
-              {showConfirm === 'cancel' && 'Esto cancelará este Versus. Las posiciones abiertas NO se cerrarán automáticamente.'}
-              {showConfirm === 'delete' && 'Esto eliminará permanentemente este Versus del historial.'}
-            </div>
-            <div style={{ display: 'flex', gap: '12px' }}>
-              <button
-                onClick={() => setShowConfirm(null)}
-                disabled={loading}
-                className="btn btn-secondary"
-                style={{ flex: 1 }}
-              >
-                Volver
-              </button>
-              <button
-                onClick={() => handleAction(showConfirm)}
-                disabled={loading}
-                className={`btn ${showConfirm === 'cancel' ? 'btn-danger' : 'btn-primary'}`}
-                style={{ flex: 1 }}
-              >
-                {loading ? 'Procesando...' : 'Confirmar'}
-              </button>
-            </div>
-          </div>
-        ) : (
-          <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-            {versus.status === 'pending' && (
-              <>
-                <button
-                  onClick={() => setShowConfirm('congelar')}
-                  disabled={loading}
-                  className="btn btn-primary"
-                  style={{ flex: 1, minWidth: '120px' }}
-                >
-                  Congelar
-                </button>
-                <button
-                  onClick={() => setShowConfirm('cancel')}
-                  disabled={loading}
-                  className="btn btn-danger-outline"
-                  style={{ flex: 1, minWidth: '120px' }}
-                >
-                  Cancelar
-                </button>
-              </>
-            )}
-
-            {versus.status === 'congelado' && (
-              <>
-                <button
-                  onClick={() => setShowConfirm('transferir')}
-                  disabled={loading}
-                  className="btn btn-success"
-                  style={{ flex: 1, minWidth: '120px' }}
-                >
-                  Transferir
-                </button>
-                <button
-                  onClick={() => setShowConfirm('cancel')}
-                  disabled={loading}
-                  className="btn btn-danger-outline"
-                  style={{ flex: 1, minWidth: '120px' }}
-                >
-                  Cancelar
-                </button>
-              </>
-            )}
-
-            {versus.status === 'error' && (
-              <button
-                onClick={() => setShowConfirm('cancel')}
-                disabled={loading}
-                className="btn btn-danger-outline"
-                style={{ flex: 1 }}
-              >
-                Eliminar
-              </button>
-            )}
-
-            {(versus.status === 'transferido' || versus.status === 'completed') && (
-              <button
-                onClick={() => setShowConfirm('delete')}
-                disabled={loading}
-                className="btn btn-danger-outline"
-                style={{ flex: 1 }}
-              >
-                Eliminar
-              </button>
-            )}
-          </div>
-        )}
-      </div>
     </div>
   );
 };

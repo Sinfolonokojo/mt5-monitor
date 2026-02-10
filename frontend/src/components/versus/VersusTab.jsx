@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useVersus } from '../../hooks/useVersus';
 import VersusCard from './VersusCard';
+import VersusDetailModal from './VersusDetailModal';
 import CreateVersusModal from './CreateVersusModal';
 import Notification from '../Notification';
 
@@ -18,6 +19,7 @@ const VersusTab = ({ accounts }) => {
   } = useVersus();
 
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [selectedVersus, setSelectedVersus] = useState(null);
   const [notification, setNotification] = useState(null);
 
   useEffect(() => {
@@ -68,6 +70,7 @@ const VersusTab = ({ accounts }) => {
     try {
       await deleteVersus(versusId);
       setNotification({ message: 'Versus eliminado exitosamente', type: 'success' });
+      setSelectedVersus(null);
     } catch (err) {
       setNotification({ message: err.message || 'Error al eliminar Versus', type: 'error' });
       throw err;
@@ -87,6 +90,11 @@ const VersusTab = ({ accounts }) => {
   // Calculate stats
   const activeCount = versusList.filter(v => v.status === 'pending' || v.status === 'congelado').length;
   const completedCount = versusList.filter(v => v.status === 'transferido' || v.status === 'completed').length;
+
+  // Keep selectedVersus in sync with versusList updates
+  const currentSelectedVersus = selectedVersus
+    ? versusList.find(v => v.id === selectedVersus.id) || null
+    : null;
 
   return (
     <div style={{ padding: '24px' }}>
@@ -206,7 +214,7 @@ const VersusTab = ({ accounts }) => {
       {sortedVersusList.length > 0 && (
         <div style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(400px, 1fr))',
+          gridTemplateColumns: 'repeat(auto-fill, minmax(380px, 1fr))',
           gap: '20px',
         }}>
           {sortedVersusList.map(versus => (
@@ -214,14 +222,24 @@ const VersusTab = ({ accounts }) => {
               key={versus.id}
               versus={versus}
               accounts={accounts || []}
-              onCongelar={handleCongelar}
-              onTransferir={handleTransferir}
-              onCancel={handleCancel}
-              onDelete={handleDelete}
-              loading={loading}
+              onClick={(v) => setSelectedVersus(v)}
             />
           ))}
         </div>
+      )}
+
+      {/* Detail Modal */}
+      {currentSelectedVersus && (
+        <VersusDetailModal
+          versus={currentSelectedVersus}
+          accounts={accounts || []}
+          onCongelar={handleCongelar}
+          onTransferir={handleTransferir}
+          onCancel={handleCancel}
+          onDelete={handleDelete}
+          loading={loading}
+          onClose={() => setSelectedVersus(null)}
+        />
       )}
 
       {/* Create Modal */}
