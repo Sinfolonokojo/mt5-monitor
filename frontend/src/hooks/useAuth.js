@@ -1,12 +1,14 @@
 import { useState, useEffect, useCallback } from 'react';
 import apiService from '../services/api';
 
-export function useAuth() {
+export function useAuth({ skipSessionCheck = false } = {}) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!skipSessionCheck);
+  const [checkingSession, setCheckingSession] = useState(!skipSessionCheck);
   const [error, setError] = useState(null);
 
   const checkAuth = useCallback(async () => {
+    setCheckingSession(true);
     setLoading(true);
     try {
       const isValid = await apiService.verifyToken();
@@ -16,13 +18,14 @@ export function useAuth() {
       setIsAuthenticated(false);
       setError(err.message);
     } finally {
+      setCheckingSession(false);
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    checkAuth();
-  }, [checkAuth]);
+    if (!skipSessionCheck) checkAuth();
+  }, [checkAuth, skipSessionCheck]);
 
   const login = useCallback(async (password) => {
     setLoading(true);
@@ -56,6 +59,7 @@ export function useAuth() {
 
   return {
     isAuthenticated,
+    checkingSession,
     loading,
     error,
     login,

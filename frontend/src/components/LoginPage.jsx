@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-function LoginPage({ onLogin, loading, error }) {
+function LoginPage({ onLogin, onDemo, loading, error }) {
   const [password, setPassword] = useState('');
   const [localError, setLocalError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -93,6 +93,15 @@ function LoginPage({ onLogin, loading, error }) {
             )}
           </form>
 
+          <div style={{ marginTop: '24px', textAlign: 'center' }}>
+            <button type="button" onClick={onDemo} style={{ ...styles.button, backgroundColor: '#21262d', boxShadow: 'none', border: '1px solid #484f58' }}>
+              Ver demo sin conexión
+            </button>
+            <p style={{ ...styles.subtitle, marginTop: '10px', fontSize: '12px' }}>
+              Explora con datos ficticios. Sin contraseña ni operaciones reales.
+            </p>
+          </div>
+
           {/* Secure Connection Indicator */}
           <div style={styles.secureIndicator}>
             <div style={styles.pulseDot}>
@@ -107,7 +116,7 @@ function LoginPage({ onLogin, loading, error }) {
         <div style={styles.cardFooter}>
           <div style={styles.footerStat}>
             <span>🖥️</span>
-            <span>API: <span style={styles.statusOnline}>En línea</span></span>
+            <span>API: <span>Sin verificar</span></span>
           </div>
           <div style={styles.footerDivider} />
           <div style={styles.footerStat}>

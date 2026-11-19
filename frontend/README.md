@@ -82,3 +82,19 @@ The built files will be in the `dist` directory.
 ## Environment Variables
 
 - `VITE_API_BASE_URL` - Backend API URL (required)
+
+
+## Offline demo
+
+Select **Ver demo sin conexión** on the login screen (or while authentication is loading) to explore fictional accounts without a backend or password. Search, phase filters and account details work locally. The persistent banner identifies example data; no real trades, account edits or API requests are made by the demo. **Volver al acceso** returns to normal authentication. Reloading also exits demo mode. Existing authentication tokens are not changed by entering the demo.
+
+### Browser checks
+
+```sh
+npm ci
+npx playwright install chromium
+npm test
+npm run build
+```
+
+To use an installed Google Chrome instead: `PLAYWRIGHT_CHANNEL=chrome npm test`. Tests run a local Vite server on port 4173.

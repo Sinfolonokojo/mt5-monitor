@@ -5,11 +5,12 @@ import { useAuth } from './hooks/useAuth';
 import AccountsTable from './components/AccountsTable';
 import VersusTab from './components/versus/VersusTab';
 import LoginPage from './components/LoginPage';
+import DemoDashboard from './components/DemoDashboard';
 import './App.css';
 import './darkMode.css';
 
-function App() {
-  const { isAuthenticated, loading: authLoading, error: authError, login, logout } = useAuth();
+function LiveApp({ onDemo, skipSessionCheck }) {
+  const { isAuthenticated, checkingSession, loading: authLoading, error: authError, login, logout } = useAuth({ skipSessionCheck });
   const { data, loading, error, fetchAccounts, refresh, refreshSingleAccount, updatePhase, updateVS } = useAccounts();
   const { featureEnabled: versusEnabled, checkFeatureStatus } = useVersus();
   const [editMode, setEditMode] = useState(false);
@@ -68,6 +69,7 @@ function App() {
             margin: '0 auto 16px'
           }} />
           <p style={{ color: 'var(--text-secondary)', fontSize: '14px' }}>Cargando...</p>
+          {checkingSession && <button className="btn btn-secondary" onClick={onDemo}>Ver demo sin conexión</button>}
         </div>
         <style>{`
           @keyframes spin {
@@ -80,7 +82,7 @@ function App() {
 
   // Show login page if not authenticated
   if (!isAuthenticated) {
-    return <LoginPage onLogin={login} loading={authLoading} error={authError} />;
+    return <LoginPage onLogin={login} onDemo={onDemo} loading={authLoading} error={authError} />;
   }
 
   // Calculate stats
@@ -370,6 +372,14 @@ function App() {
       </nav>
     </div>
   );
+}
+
+function App() {
+  const [demoMode, setDemoMode] = useState(false);
+  const [skipSessionCheck, setSkipSessionCheck] = useState(false);
+  return demoMode
+    ? <DemoDashboard onExit={() => { setSkipSessionCheck(true); setDemoMode(false); }} />
+    : <LiveApp onDemo={() => setDemoMode(true)} skipSessionCheck={skipSessionCheck} />;
 }
 
 export default App;
